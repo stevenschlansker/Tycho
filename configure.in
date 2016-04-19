@@ -2643,14 +2643,7 @@ if test "$GNU_CC" -a "$OS_TARGET" != WINNT; then
     VISIBILITY_FLAGS='-fvisibility=hidden'
     ;;
   *)
-    case $GCC_VERSION in
-    4.6*)
-      VISIBILITY_FLAGS='-I$(DIST)/system_wrappers -include $(MOZILLA_DIR)/config/gcc_hidden_dso_handle.h'
-      ;;
-    *)
-      VISIBILITY_FLAGS='-I$(DIST)/system_wrappers -include $(MOZILLA_DIR)/config/gcc_hidden.h'
-      ;;
-    esac
+    VISIBILITY_FLAGS='-I$(DIST)/system_wrappers -include $(MOZILLA_DIR)/config/gcc_hidden.h'
     WRAP_SYSTEM_INCLUDES=1
     ;;
   esac
@@ -2673,28 +2666,7 @@ esac
 AC_SUBST(WRAP_SYSTEM_INCLUDES)
 AC_SUBST(VISIBILITY_FLAGS)
 
-MOZ_GCC_PR49911
 MOZ_LLVM_PR8927
-
-dnl Check for __force_align_arg_pointer__ for SSE2 on gcc
-dnl ========================================================
-if test "$GNU_CC"; then
-  CFLAGS_save="${CFLAGS}"
-  CFLAGS="${CFLAGS} -Werror"
-  AC_CACHE_CHECK(for __force_align_arg_pointer__ attribute,
-                 ac_cv_force_align_arg_pointer,
-                 [AC_TRY_COMPILE([__attribute__ ((__force_align_arg_pointer__)) void test() {}],
-                                 [],
-                                 ac_cv_force_align_arg_pointer="yes",
-                                 ac_cv_force_align_arg_pointer="no")])
-  CFLAGS="${CFLAGS_save}"
-  if test "$ac_cv_force_align_arg_pointer" = "yes"; then
-    HAVE_GCC_ALIGN_ARG_POINTER=1
-  else
-    HAVE_GCC_ALIGN_ARG_POINTER=
-  fi
-fi
-AC_SUBST(HAVE_GCC_ALIGN_ARG_POINTER)
 
 dnl Checks for header files.
 dnl ========================================================
@@ -7002,12 +6974,15 @@ elif test "$GNU_CC"; then
     # -Wmaybe-uninitialized - too many false positives
     # -Wdeprecated-declarations - we don't want our builds held hostage when a
     #   platform-specific API becomes deprecated.
+    # -Warray-bounds - false positives depending on optimization
     MOZ_C_SUPPORTS_WARNING(-W, no-error=uninitialized, ac_c_has_noerror_uninitialized)
     MOZ_CXX_SUPPORTS_WARNING(-W, no-error=uninitialized, ac_cxx_has_noerror_uninitialized)
     MOZ_C_SUPPORTS_WARNING(-W, no-error=maybe-uninitialized, ac_c_has_noerror_maybe_uninitialized)
     MOZ_CXX_SUPPORTS_WARNING(-W, no-error=maybe-uninitialized, ac_cxx_has_noerror_maybe_uninitialized)
     MOZ_C_SUPPORTS_WARNING(-W, no-error=deprecated-declarations, ac_c_has_noerror_deprecated_declarations)
     MOZ_CXX_SUPPORTS_WARNING(-W, no-error=deprecated-declarations, ac_cxx_has_noerror_deprecated_declarations)
+    MOZ_C_SUPPORTS_WARNING(-W, no-error=array-bounds, ac_c_has_noerror_array_bounds)
+    MOZ_CXX_SUPPORTS_WARNING(-W, no-error=array-bounds, ac_cxx_has_noerror_array_bounds)
 
     if test -n "$MOZ_PGO"; then
         MOZ_C_SUPPORTS_WARNING(-W, no-error=coverage-mismatch, ac_c_has_noerror_coverage_mismatch)
@@ -7450,6 +7425,8 @@ if test -n "$STDCXX_COMPAT"; then
    eval $(CXX="$CXX" HOST_CXX="$HOST_CXX" $PYTHON -m mozbuild.configure.libstdcxx)
    AC_SUBST(MOZ_LIBSTDCXX_TARGET_VERSION)
    AC_SUBST(MOZ_LIBSTDCXX_HOST_VERSION)
+   CXXFLAGS="$CXXFLAGS -D_GLIBCXX_USE_CXX11_ABI=0"
+   HOST_CXXFLAGS="$HOST_CXXFLAGS -D_GLIBCXX_USE_CXX11_ABI=0"
 fi
 
 dnl ========================================================

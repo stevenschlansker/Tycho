@@ -11,11 +11,8 @@ let Cu = Components.utils;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource:///modules/MigrationUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Downloads",
-                                  "resource://gre/modules/Downloads.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PropertyListUtils",
                                   "resource://gre/modules/PropertyListUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
@@ -215,17 +212,10 @@ History.prototype = {
         for (let entry of entries) {
           if (entry.has("lastVisitedDate")) {
             let visitDate = this._parseCocoaDate(entry.get("lastVisitedDate"));
-            try {
-              places.push({ uri: NetUtil.newURI(entry.get("")),
-                            title: entry.get("title"),
-                            visits: [{ transitionType: transType,
-                                       visitDate: visitDate }] });
-            }
-            catch(ex) {
-              // Safari's History file may contain malformed URIs which
-              // will be ignored.
-              Cu.reportError(ex)
-            }
+            places.push({ uri: NetUtil.newURI(entry.get("")),
+                          title: entry.get("title"),
+                          visits: [{ transitionType: transType,
+                                     visitDate: visitDate }] });
           }
         }
         if (places.length > 0) {
@@ -307,7 +297,7 @@ MainPreferencesPropertyList.prototype = {
     binaryStream.setInputStream(inputStream);
     let bytes = binaryStream.readByteArray(inputStream.available());
     this._dict = PropertyListUtils._readFromArrayBufferSync(
-      new Uint8Array(bytes).buffer);
+      Uint8Array(bytes).buffer);
     return this._dict;
   }
 };
@@ -319,8 +309,8 @@ Preferences.prototype = {
   type: MigrationUtils.resourceTypes.SETTINGS,
 
   migrate: function MPR_migrate(aCallback) {
-    this._mainPreferencesPropertyList.read(aDict => {
-      Task.spawn(function* () {
+    this._mainPreferencesPropertyList.read(
+      MigrationUtils.wrapMigrateFunction(function migratePrefs(aDict) {
         if (!aDict)
           throw new Error("Could not read preferences file");
 
@@ -345,6 +335,29 @@ Preferences.prototype = {
         this._set("WebKitDisplayImagesKey", "permissions.default.image",
                   function(webkitVal) webkitVal ? 1 : 2);
 
+        // Default charset migration
+        this._set("WebKitDefaultTextEncodingName", "intl.charset.default",
+          function(webkitCharset) {
+            // We don't support x-mac-korean (see bug 713516), but it mostly matches
+            // EUC-KR.
+            if (webkitCharset == "x-mac-korean")
+              return "EUC-KR";
+
+            // getCharsetAlias throws if an invalid value is passed in.
+            try {
+              return Cc["@mozilla.org/charset-converter-manager;1"].
+                     getService(Ci.nsICharsetConverterManager).
+                     getCharsetAlias(webkitCharset);
+            }
+            catch(ex) {
+              Cu.reportError("Could not convert webkit charset '" + webkitCharset +
+                             "' to a supported charset");
+            }
+            // Don't set the preference if we could not get the corresponding
+            // charset.
+            return undefined;
+          });
+
 #ifdef XP_WIN
         // Cookie-accept policy.
         // For the OS X version, see WebFoundationCookieBehavior.
@@ -358,13 +371,8 @@ Preferences.prototype = {
 #endif
 
         this._migrateFontSettings();
-        yield this._migrateDownloadsFolder();
-
-      }.bind(this)).then(() => aCallback(true), ex => {
-        Cu.reportError(ex);
-        aCallback(false);
-      }).catch(Cu.reportError);
-    });
+        this._migrateDownloadsFolder();
+    }.bind(this), aCallback));
   },
 
   /**
@@ -373,7 +381,7 @@ Preferences.prototype = {
    * @param aSafariKey
    *        The dictionary key for the preference of Safari.
    * @param aMozPref
-   *        The goanna/firefox preference to which aSafariKey should be migrated
+   *        The Goanna/Pale Moon preference to which aSafariKey should be migrated
    * @param [optional] aConvertFunction(aSafariValue)
    *        a function that converts the safari-preference value to the
    *        appropriate value for aMozPref.  If it's not passed, then the
@@ -487,7 +495,7 @@ Preferences.prototype = {
     return localeLangGroup;
   },
 
-  _migrateDownloadsFolder: Task.async(function* () {
+  _migrateDownloadsFolder: function MPR__migrateDownloadsFolder() {
     // Windows Safari uses DownloadPath while Mac uses DownloadsPath.
     // Check both for future compatibility.
     let key;
@@ -508,15 +516,15 @@ Preferences.prototype = {
       folderListVal = 0;
     }
     else {
-      let systemDownloadsPath = yield Downloads.getSystemDownloadsDirectory();
-      let systemDownloadsFolder = FileUtils.File(systemDownloadsPath);
-      if (downloadsFolder.equals(systemDownloadsFolder))
+      let dnldMgr = Cc["@mozilla.org/download-manager;1"].
+                    getService(Ci.nsIDownloadManager);
+      if (downloadsFolder.equals(dnldMgr.defaultDownloadsDirectory))
         folderListVal = 1;
     }
     Services.prefs.setIntPref("browser.download.folderList", folderListVal);
     Services.prefs.setComplexValue("browser.download.dir", Ci.nsILocalFile,
                                    downloadsFolder);
-  }),
+  }
 };
 
 function SearchStrings(aMainPreferencesPropertyListInstance) {

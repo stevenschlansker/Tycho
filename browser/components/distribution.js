@@ -13,29 +13,17 @@ const DISTRIBUTION_CUSTOMIZATION_COMPLETE_TOPIC =
   "distribution-customization-complete";
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
                                   "resource://gre/modules/PlacesUtils.jsm");
 
 this.DistributionCustomizer = function DistributionCustomizer() {
-  // For parallel xpcshell testing purposes allow loading the distribution.ini
-  // file from the profile folder through an hidden pref.
-  let loadFromProfile = false;
-  try {
-    loadFromProfile = Services.prefs.getBoolPref("distribution.testing.loadFromProfile");
-  } catch(ex) {}
   let dirSvc = Cc["@mozilla.org/file/directory_service;1"].
                getService(Ci.nsIProperties);
-  try {
-    let iniFile = loadFromProfile ? dirSvc.get("ProfD", Ci.nsIFile)
-                                  : dirSvc.get("XREAppDist", Ci.nsIFile);
-    if (loadFromProfile) {
-      iniFile.leafName = "distribution";
-    }
-    iniFile.append("distribution.ini");
-    if (iniFile.exists())
-      this._iniFile = iniFile;
-  } catch(ex) {}
+  let iniFile = dirSvc.get("XREExeF", Ci.nsIFile);
+  iniFile.leafName = "distribution";
+  iniFile.append("distribution.ini");
+  if (iniFile.exists())
+    this._iniFile = iniFile;
 }
 
 DistributionCustomizer.prototype = {
@@ -171,7 +159,7 @@ DistributionCustomizer.prototype = {
                                           , index: index
                                           , feedURI: this._makeURI(items[iid]["feedLink"])
                                           , siteURI: this._makeURI(items[iid]["siteLink"])
-                                          }).then(null, Cu.reportError);
+                                          });
         break;
 
       case "bookmark":

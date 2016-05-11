@@ -21,7 +21,7 @@
 
 <window xmlns:html="http://www.w3.org/1999/xhtml"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-        id="aboutDialog"
+        id="PMaboutDialog"
         windowtype="Browser:About"
         onload="init(event);"
 #ifdef MOZ_UPDATER
@@ -38,11 +38,15 @@
 
   <script type="application/javascript" src="chrome://browser/content/aboutDialog.js"/>
 
-  <vbox id="aboutDialogContainer">
-    <hbox id="clientBox">
-      <vbox id="leftBox" flex="1"/>
-      <vbox id="rightBox" flex="1">
-#expand <label id="version">__MOZ_APP_VERSION__</label>
+  <vbox id="aboutPMDialogContainer">
+    <hbox id="PMclientBox">
+      <vbox id="PMleftBox" flex="1"/>
+      <vbox id="PMrightBox" flex="1">
+#ifdef HAVE_64BIT_OS
+#expand <label id="PMversion">Version: __MOZ_APP_VERSION__ (x64)</label>
+#else
+#expand <label id="PMversion">Version: __MOZ_APP_VERSION__ (x86)</label>
+#endif
         <label id="distribution" class="text-blurb"/>
         <label id="distributionId" class="text-blurb"/>
 
@@ -50,35 +54,16 @@
           <vbox id="updateBox">
 #ifdef MOZ_UPDATER
             <deck id="updateDeck" orient="vertical">
-              <hbox id="checkForUpdates" align="center">
-                <button id="checkForUpdatesButton" align="start"
-                        label="&update.checkForUpdatesButton.label;"
-                        accesskey="&update.checkForUpdatesButton.accesskey;"
-                        oncommand="gAppUpdater.checkForUpdates();"/>
-                <spacer flex="1"/>
-              </hbox>
-              <hbox id="downloadAndInstall" align="center">
-                <button id="downloadAndInstallButton" align="start"
-                        oncommand="gAppUpdater.doUpdate();"/>
-                        <!-- label and accesskey will be filled by JS -->
-                <spacer flex="1"/>
-              </hbox>
-              <hbox id="apply" align="center">
+              <hbox id="updateButtonBox" align="center">
                 <button id="updateButton" align="start"
-                        label="&update.updateButton.label2;"
-                        accesskey="&update.updateButton.accesskey;"
-                        oncommand="gAppUpdater.buttonRestartAfterDownload();"/>
-                <spacer flex="1"/>
-              </hbox>
-              <hbox id="applyBillboard" align="center">
-                <button id="applyButtonBillboard" align="start"
-                        label="&update.applyButtonBillboard.label;"
-                        accesskey="&update.applyButtonBillboard.accesskey;"
-                        oncommand="gAppUpdater.buttonApplyBillboard();"/>
+                        oncommand="gAppUpdater.buttonOnCommand();"/>
                 <spacer flex="1"/>
               </hbox>
               <hbox id="checkingForUpdates" align="center">
                 <image class="update-throbber"/><label>&update.checkingForUpdates;</label>
+              </hbox>
+              <hbox id="checkingAddonCompat" align="center">
+                <image class="update-throbber"/><label>&update.checkingAddonCompat;</label>
               </hbox>
               <hbox id="downloading" align="center">
                 <image class="update-throbber"/><label>&update.downloading.start;</label><label id="downloadStatus"/><label>&update.downloading.end;</label>
@@ -95,51 +80,35 @@
               <hbox id="noUpdatesFound" align="center">
                 <label>&update.noUpdatesFound;</label>
               </hbox>
-              <hbox id="otherInstanceHandlingUpdates" align="center">
-                <label>&update.otherInstanceHandlingUpdates;</label>
-              </hbox>
               <hbox id="manualUpdate" align="center">
                 <label>&update.manual.start;</label><label id="manualLink" class="text-link"/><label>&update.manual.end;</label>
-              </hbox>
-              <hbox id="unsupportedSystem" align="center">
-                <label>&update.unsupported.start;</label><label id="unsupportedLink" class="text-link">&update.unsupported.linkText;</label><label>&update.unsupported.end;</label>
               </hbox>
             </deck>
 #endif
           </vbox>
 
-#ifdef MOZ_UPDATER
-          <description class="text-blurb" id="currentChannelText">
-            &channel.description.start;<label id="currentChannel"/>&channel.description.end;
-          </description>
-#endif
-          <vbox id="experimental" hidden="true">
-            <description class="text-blurb" id="warningDesc">
-              &warningDesc.version;
-#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
-              &warningDesc.telemetryDesc;
-#endif
-            </description>
-            <description class="text-blurb" id="communityExperimentalDesc">
-              &community.exp.start;<label class="text-link" href="http://www.mozilla.org/">&community.exp.mozillaLink;</label>&community.exp.middle;<label class="text-link" href="about:credits">&community.exp.creditsLink;</label>&community.exp.end;
-            </description>
-          </vbox>
-          <description class="text-blurb" id="communityDesc">
-            &community.start2;<label class="text-link" href="http://www.mozilla.org/">&community.mozillaLink;</label>&community.middle2;<label class="text-link" href="about:credits">&community.creditsLink;</label>&community.end3;
-          </description>
-          <description class="text-blurb" id="contributeDesc">
-              &helpus.start;<label class="text-link" href="https://sendto.mozilla.org/page/contribute/Give-Now?source=mozillaorg_default_footer&#38;ref=firefox_about&#38;utm_campaign=firefox_about&#38;tm_source=firefox&#38;tm_medium=referral&#38;utm_content=20140929_FireFoxAbout">&helpus.donateLink;</label>&helpus.middle;<label class="text-link" href="http://www.mozilla.org/contribute/">&helpus.getInvolvedLink;</label>&helpus.end;
-          </description>
+        <description class="text-pmcreds">
+          Pale Moon is released by <label class="text-link" href="http://www.moonchildproductions.info">Moonchild Productions</label>.
+        </description>
+        <description class="text-pmcreds">
+          Testers and moral support: Jose Arellano, Cole Hughes, Tobias Olsson, Duco Quanjer, Gerardo Rubio, Daryl Sprint, Jason Sullivan.
+        </description>
+        <description class="text-pmcreds">
+          Special thanks to: Lee Brown, Jacob M. Ross, Phil Chan, Colin Moran, and all other supporters!
+        </description>
+        <description class="text-blurb">
+          If you wish to contribute, please consider helping out by providing support to other users or becoming a beta tester on the <label class="text-link" href="http://forum.palemoon.org/">Pale Moon forum</label>
+        </description>    
         </vbox>
       </vbox>
     </hbox>
-    <vbox id="bottomBox">
+    <vbox id="PMbottomBox">
       <hbox pack="center">
-        <label class="text-link bottom-link" href="about:license">&bottomLinks.license;</label>
-        <label class="text-link bottom-link" href="about:rights">&bottomLinks.rights;</label>
-        <label class="text-link bottom-link" href="https://www.mozilla.org/privacy/">&bottomLinks.privacy;</label>
+        <label class="text-link bottom-link" href="about:license">Licensing information</label>
+        <label class="text-link bottom-link" href="about:rights">End-user rights</label>
+        <label class="text-link bottom-link" href="http://www.palemoon.org/releasenotes-ng.shtml">Release notes</label>
       </hbox>
-      <description id="trademark">&trademarkInfo.part1;</description>
+      <description id="PMtrademark">&trademarkInfo.part1;</description>
     </vbox>
   </vbox>
   

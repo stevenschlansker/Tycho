@@ -10,6 +10,8 @@
   <!ENTITY % contentDTD SYSTEM "chrome://browser/locale/preferences/content.dtd">
   %brandDTD;
   %contentDTD;
+  <!ENTITY % palemoonDTD SYSTEM "chrome://browser/locale/palemoon.dtd">
+  %palemoonDTD; 
 ]>
 
 <overlay id="ContentPaneOverlay"
@@ -22,22 +24,15 @@
     <preferences id="contentPreferences">
       <!--XXX buttons prefs -->
 
-      <!-- DRM content -->
-      <preference id="media.eme.enabled" name="media.eme.enabled" type="bool"/>
-
-      <!-- POPUPS -->
+      <!-- POPUPS, IMAGES -->
       <preference id="dom.disable_open_during_load"   name="dom.disable_open_during_load"   type="bool"/>
+      <preference id="permissions.default.image"      name="permissions.default.image"      type="int"/>
 
       <!-- FONTS -->
       <preference id="font.language.group"
                   name="font.language.group"
                   type="wstring"
                   onchange="gContentPane._rebuildFonts();"/>
-
-      <!-- LANGUAGES -->
-      <preference id="browser.translation.detectLanguage"
-                  name="browser.translation.detectLanguage"
-                  type="bool"/>
     </preferences>
     
     <script type="application/javascript" src="chrome://mozapps/content/preferences/fontbuilder.js"/>
@@ -53,15 +48,6 @@
           <column/>
         </columns>
         <rows id="contentRows-1">
-          <row id="playDRMContentRow">
-            <vbox align="start">
-              <checkbox id="playDRMContent" preference="media.eme.enabled"
-                        label="&playDRMContent.label;" accesskey="&playDRMContent.accesskey;"/>
-            </vbox>
-            <hbox pack="end">
-              <label id="playDRMContentLink" class="text-link" value="&playDRMContent.learnMore.label;"/>
-            </hbox>
-          </row>
           <row id="popupPolicyRow">
             <vbox align="start">
               <checkbox id="popupPolicy" preference="dom.disable_open_during_load"
@@ -69,10 +55,20 @@
                         onsyncfrompreference="return gContentPane.updateButtons('popupPolicyButton', 
                                                                             'dom.disable_open_during_load');"/>
             </vbox>
-            <hbox pack="end">
-              <button id="popupPolicyButton" label="&popupExceptions.label;"
-                      oncommand="gContentPane.showPopupExceptions();"
-                      accesskey="&popupExceptions.accesskey;"/>
+            <button id="popupPolicyButton" label="&popupExceptions.label;"
+                    oncommand="gContentPane.showPopupExceptions();"
+                    accesskey="&popupExceptions.accesskey;"/>
+          </row>
+          <row id="enableImagesRow">
+            <hbox align="center">
+              	<label id="loadImages" control="loadImages-menu">&palemoon.loadImages.label;</label>
+					<menulist id="loadImages-menu" preference="permissions.default.image" sizetopopup="always">
+						<menupopup>
+							<menuitem label="&palemoon.loadImages.always;" value="1" />
+							<menuitem label="&palemoon.loadImages.never;" value="2" />
+							<menuitem label="&palemoon.loadImages.no3rdparty;" value="3" />
+						</menupopup>
+					</menulist>
             </hbox>
           </row>
         </rows>
@@ -144,38 +140,13 @@
     <groupbox id="languagesGroup">
       <caption label="&languages.label;"/>
 
-      <grid id="languagesGrid">
-        <columns>
-          <column flex="1"/>
-          <column/>
-        </columns>
-        <rows id="languagesRows">
-          <row id="preferredLanguageRow">
-            <label flex="1" control="chooseLanguage">&chooseLanguage.label;</label>
-            <button id="chooseLanguage"
-                    label="&chooseButton.label;"
-                    accesskey="&chooseButton.accesskey;"
-                    oncommand="gContentPane.showLanguages();"/>
-          </row>
-          <row id="translationBox" hidden="true">
-            <hbox align="center">
-              <checkbox id="translate" preference="browser.translation.detectLanguage"
-                        label="&translateWebPages.label;." accesskey="&translateWebPages.accesskey;"
-                        onsyncfrompreference="return gContentPane.updateButtons('translateButton',
-                                              'browser.translation.detectLanguage');"/>
-              <label>&translation.options.attribution.beforeLogo;</label>
-              <image id="translationAttributionImage" aria-label="Microsoft Translator"
-                     onclick="gContentPane.openTranslationProviderAttribution()"
-                     src="chrome://browser/content/microsoft-translator-attribution.png"/>
-              <label>&translation.options.attribution.afterLogo;</label>
-            </hbox>
-            <button id="translateButton" label="&translateExceptions.label;"
-                    oncommand="gContentPane.showTranslationExceptions();"
-                    accesskey="&translateExceptions.accesskey;"/>
-          </row>
-        </rows>
-      </grid>
-
+      <hbox id="languagesBox" align="center">
+        <description flex="1" control="chooseLanguage">&chooseLanguage.label;</description>
+        <button id="chooseLanguage"
+                label="&chooseButton.label;"
+                accesskey="&chooseButton.accesskey;"
+                oncommand="gContentPane.showLanguages();"/>
+      </hbox>
     </groupbox>
 
   </prefpane>

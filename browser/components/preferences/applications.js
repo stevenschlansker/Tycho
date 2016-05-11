@@ -8,10 +8,15 @@
 //****************************************************************************//
 // Constants & Enumeration Values
 
+/*
+#ifndef XP_MACOSX
+*/
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 var Cr = Components.results;
-
+/*
+#endif
+*/
 Components.utils.import('resource://gre/modules/Services.jsm');
 
 const TYPE_MAYBE_FEED = "application/vnd.mozilla.maybe.feed";
@@ -154,14 +159,14 @@ function isFeedType(t) {
  * This object wraps nsIHandlerInfo with some additional functionality
  * the Applications prefpane needs to display and allow modification of
  * the list of handled types.
- *
+ * 
  * We create an instance of this wrapper for each entry we might display
  * in the prefpane, and we compose the instances from various sources,
- * including plugins and the handler service.
+ * including navigator.plugins and the handler service.
  *
  * We don't implement all the original nsIHandlerInfo functionality,
  * just the stuff that the prefpane needs.
- *
+ * 
  * In theory, all of the custom functionality in this wrapper should get
  * pushed down into nsIHandlerInfo eventually.
  */
@@ -271,7 +276,7 @@ HandlerInfoWrapper.prototype = {
   // What to do with content of this type.
   get preferredAction() {
     // If we have an enabled plugin, then the action is to use that plugin.
-    if (this.pluginName && !this.isDisabledPluginType)
+    if (this.plugin && !this.isDisabledPluginType)
       return kActionUsePlugin;
 
     // If the action is to use a helper app, but we don't have a preferred
@@ -292,14 +297,6 @@ HandlerInfoWrapper.prototype = {
   },
 
   set preferredAction(aNewValue) {
-    // If the action is to use the plugin,
-    // we must set the preferred action to "save to disk".
-    // But only if it's not currently the preferred action.
-    if ((aNewValue == kActionUsePlugin) &&
-        (this.preferredAction != Ci.nsIHandlerInfo.saveToDisk)) {
-      aNewValue = Ci.nsIHandlerInfo.saveToDisk;
-    }
-
     // We don't modify the preferred action if the new action is to use a plugin
     // because handler info objects don't understand our custom "use plugin"
     // value.  Also, leaving it untouched means that we can automatically revert
@@ -315,7 +312,7 @@ HandlerInfoWrapper.prototype = {
     // of any user configuration, and the default in that case is to always ask,
     // even though we never ask for content handled by a plugin, so special case
     // plugin-handled types by returning false here.
-    if (this.pluginName && this.handledOnlyByPlugin)
+    if (this.plugin && this.handledOnlyByPlugin)
       return false;
 
     // If this is a protocol type and the preferred action is "save to disk",
@@ -1095,22 +1092,24 @@ var gApplicationsPane = {
    * check the pref ourselves to find out if it's enabled.
    */
   _loadPluginHandlers: function() {
-    "use strict";
+    for (let i = 0; i < navigator.plugins.length; ++i) {
+      let plugin = navigator.plugins[i];
+      for (let j = 0; j < plugin.length; ++j) {
+        let type = plugin[j].type;
 
-    let mimeTypes = navigator.mimeTypes;
+        let handlerInfoWrapper;
+        if (type in this._handledTypes)
+          handlerInfoWrapper = this._handledTypes[type];
+        else {
+          let wrappedHandlerInfo =
+            this._mimeSvc.getFromTypeAndExtension(type, null);
+          handlerInfoWrapper = new HandlerInfoWrapper(type, wrappedHandlerInfo);
+          handlerInfoWrapper.handledOnlyByPlugin = true;
+          this._handledTypes[type] = handlerInfoWrapper;
+        }
 
-    for (let mimeType of mimeTypes) {
-      let handlerInfoWrapper;
-      if (mimeType.type in this._handledTypes) {
-        handlerInfoWrapper = this._handledTypes[mimeType.type];
-      } else {
-        let wrappedHandlerInfo =
-              this._mimeSvc.getFromTypeAndExtension(mimeType.type, null);
-        handlerInfoWrapper = new HandlerInfoWrapper(mimeType.type, wrappedHandlerInfo);
-        handlerInfoWrapper.handledOnlyByPlugin = true;
-        this._handledTypes[mimeType.type] = handlerInfoWrapper;
+        handlerInfoWrapper.plugin = plugin;
       }
-      handlerInfoWrapper.pluginName = mimeType.enabledPlugin.name;
     }
   },
 
@@ -1303,7 +1302,7 @@ var gApplicationsPane = {
 
       case kActionUsePlugin:
         return this._prefsBundle.getFormattedString("usePluginIn",
-                                                    [aHandlerInfo.pluginName,
+                                                    [aHandlerInfo.plugin.name,
                                                      this._brandShortName]);
     }
   },
@@ -1397,7 +1396,7 @@ var gApplicationsPane = {
 
     {
       var askMenuItem = document.createElement("menuitem");
-      askMenuItem.setAttribute("action", Ci.nsIHandlerInfo.alwaysAsk);
+      askMenuItem.setAttribute("alwaysAsk", "true");
       let label;
       if (isFeedType(handlerInfo.type))
         label = this._prefsBundle.getFormattedString("previewInApp",
@@ -1485,11 +1484,11 @@ var gApplicationsPane = {
     }
 
     // Create a menu item for the plugin.
-    if (handlerInfo.pluginName) {
+    if (handlerInfo.plugin) {
       var pluginMenuItem = document.createElement("menuitem");
       pluginMenuItem.setAttribute("action", kActionUsePlugin);
       let label = this._prefsBundle.getFormattedString("usePluginIn",
-                                                       [handlerInfo.pluginName,
+                                                       [handlerInfo.plugin.name,
                                                         this._brandShortName]);
       pluginMenuItem.setAttribute("label", label);
       pluginMenuItem.setAttribute("tooltiptext", label);
@@ -1643,31 +1642,33 @@ var gApplicationsPane = {
     var typeItem = this._list.selectedItem;
     var handlerInfo = this._handledTypes[typeItem.type];
 
-    let action = parseInt(aActionItem.getAttribute("action"), 10);
-
-    // Set the plugin state if we're enabling or disabling a plugin.
-    if (action == kActionUsePlugin)
-      handlerInfo.enablePluginType();
-    else if (handlerInfo.pluginName && !handlerInfo.isDisabledPluginType)
-      handlerInfo.disablePluginType();
-
-    // Set the preferred application handler.
-    // We leave the existing preferred app in the list when we set
-    // the preferred action to something other than useHelperApp so that
-    // legacy datastores that don't have the preferred app in the list
-    // of possible apps still include the preferred app in the list of apps
-    // the user can choose to handle the type.
-    if (action == Ci.nsIHandlerInfo.useHelperApp)
-      handlerInfo.preferredApplicationHandler = aActionItem.handlerApp;
-
-    // Set the "always ask" flag.
-    if (action == Ci.nsIHandlerInfo.alwaysAsk)
+    if (aActionItem.hasAttribute("alwaysAsk")) {
       handlerInfo.alwaysAskBeforeHandling = true;
-    else
+    }
+    else if (aActionItem.hasAttribute("action")) {
+      let action = parseInt(aActionItem.getAttribute("action"));
+
+      // Set the plugin state if we're enabling or disabling a plugin.
+      if (action == kActionUsePlugin)
+        handlerInfo.enablePluginType();
+      else if (handlerInfo.plugin && !handlerInfo.isDisabledPluginType)
+        handlerInfo.disablePluginType();
+
+      // Set the preferred application handler.
+      // We leave the existing preferred app in the list when we set
+      // the preferred action to something other than useHelperApp so that
+      // legacy datastores that don't have the preferred app in the list
+      // of possible apps still include the preferred app in the list of apps
+      // the user can choose to handle the type.
+      if (action == Ci.nsIHandlerInfo.useHelperApp)
+        handlerInfo.preferredApplicationHandler = aActionItem.handlerApp;
+
+      // Set the "always ask" flag.
       handlerInfo.alwaysAskBeforeHandling = false;
 
-    // Set the preferred action.
-    handlerInfo.preferredAction = action;
+      // Set the preferred action.
+      handlerInfo.preferredAction = action;
+    }
 
     handlerInfo.store();
 
@@ -1841,9 +1842,10 @@ var gApplicationsPane = {
         return this._getIconURLForSystemDefault(aHandlerInfo);
 
       case Ci.nsIHandlerInfo.useHelperApp:
-        let preferredApp = aHandlerInfo.preferredApplicationHandler;
-        if (this.isValidHandlerApp(preferredApp))
-          return this._getIconURLForHandlerApp(preferredApp);
+        let (preferredApp = aHandlerInfo.preferredApplicationHandler) {
+          if (this.isValidHandlerApp(preferredApp))
+            return this._getIconURLForHandlerApp(preferredApp);
+        }
         break;
 
       // This should never happen, but if preferredAction is set to some weird

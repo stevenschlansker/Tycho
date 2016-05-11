@@ -22,7 +22,6 @@
   <script type="application/javascript" src="chrome://browser/content/utilityOverlay.js"/>
 
   <prefpane id="LanguagesDialogPane"
-            class="largeDialogContainer"
             onpaneload="gLanguagesDialog.init();"
             helpTopic="prefs-languages">
 
@@ -48,7 +47,8 @@
       <stringbundle id="bundleAccepted"     src="resource://gre/res/language.properties"/>
     </stringbundleset>
 
-    <description>&languages.customize.description;</description>
+    <description>&languages.customize.prefLangDescript;</description>
+    <label>&languages.customize.active.label;</label>
     <grid flex="1">
       <columns>
         <column flex="1"/>

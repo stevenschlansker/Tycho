@@ -24,13 +24,8 @@
     var Ci = Components.interfaces;
     var Cr = Components.results;
 
-    Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-    Components.utils.import("resource://gre/modules/Task.jsm");
     Components.utils.import("resource://gre/modules/PlacesUtils.jsm");
-    XPCOMUtils.defineLazyModuleGetter(window,
-      "PlacesUIUtils", "resource:///modules/PlacesUIUtils.jsm");
-    XPCOMUtils.defineLazyModuleGetter(window,
-      "PlacesTransactions", "resource://gre/modules/PlacesTransactions.jsm");
+    Components.utils.import("resource:///modules/PlacesUIUtils.jsm");
   ]]></script>
   <script type="application/javascript"
           src="chrome://browser/content/places/controller.js"/>
@@ -54,13 +49,13 @@
              oncommand="goDoPlacesCommand('placesCmd_open');"/>
     <command id="placesCmd_open:window"
              oncommand="goDoPlacesCommand('placesCmd_open:window');"/>
-    <command id="placesCmd_open:privatewindow"
-             oncommand="goDoPlacesCommand('placesCmd_open:privatewindow');"/>
     <command id="placesCmd_open:tab"
              oncommand="goDoPlacesCommand('placesCmd_open:tab');"/>
 
     <command id="placesCmd_new:bookmark"
              oncommand="goDoPlacesCommand('placesCmd_new:bookmark');"/>
+    <command id="placesCmd_new:livemark"
+             oncommand="goDoPlacesCommand('placesCmd_new:livemark');"/>
     <command id="placesCmd_new:folder"
              oncommand="goDoPlacesCommand('placesCmd_new:folder');"/>
     <command id="placesCmd_new:separator"
@@ -80,6 +75,8 @@
              oncommand="goDoPlacesCommand('placesCmd_deleteDataHost');"/>
     <command id="placesCmd_createBookmark"
              oncommand="goDoPlacesCommand('placesCmd_createBookmark');"/>
+    <command id="placesCmd_openParentFolder"
+             oncommand="goDoPlacesCommand('placesCmd_openParentFolder');"/>
 
     <!-- Special versions of cut/copy/paste/delete which check for an open context menu. -->
     <command id="placesCmd_cut"
@@ -91,6 +88,13 @@
     <command id="placesCmd_delete"
              oncommand="goDoPlacesCommand('placesCmd_delete');"/>
   </commandset>
+
+  <keyset id="placesCommandKeys">
+    <key id="key_placesCmd_openParentFolder"
+         keycode="VK_F1"
+         command="placesCmd_openParentFolder"
+         modifiers="accel,shift"/>
+  </keyset>
 
   <menupopup id="placesContext"
              onpopupshowing="this._view = PlacesUIUtils.getViewForNode(document.popupNode);
@@ -115,7 +119,7 @@
               onclick="checkForMiddleClick(this, event);"
               label="&cmd.open_all_in_tabs.label;"
               accesskey="&cmd.open_all_in_tabs.accesskey;"
-              selectiontype="single|none"
+              selectiontype="single"
               selection="folder|host|query"/>
     <menuitem id="placesContext_openLinks:tabs"
               oncommand="var view = PlacesUIUtils.getViewForNode(document.popupNode);
@@ -131,32 +135,25 @@
               accesskey="&cmd.open_window.accesskey;"
               selectiontype="single"
               selection="link"/>
-    <menuitem id="placesContext_open:newprivatewindow"
-              command="placesCmd_open:privatewindow"
-              label="&cmd.open_private_window.label;"
-              accesskey="&cmd.open_private_window.accesskey;"
-              selectiontype="single"
-              selection="link"
-              hideifprivatebrowsing="true"/>
     <menuseparator id="placesContext_openSeparator"/>
     <menuitem id="placesContext_new:bookmark"
               command="placesCmd_new:bookmark"
               label="&cmd.new_bookmark.label;"
               accesskey="&cmd.new_bookmark.accesskey;"
-              selectiontype="any"
+              selection="any"
               hideifnoinsertionpoint="true"/>
     <menuitem id="placesContext_new:folder"
               command="placesCmd_new:folder"
               label="&cmd.new_folder.label;"
               accesskey="&cmd.context_new_folder.accesskey;"
-              selectiontype="any"
+              selection="any"
               hideifnoinsertionpoint="true"/>
     <menuitem id="placesContext_new:separator"
               command="placesCmd_new:separator"
               label="&cmd.new_separator.label;"
               accesskey="&cmd.new_separator.accesskey;"
               closemenu="single"
-              selectiontype="any"
+              selection="any"
               hideifnoinsertionpoint="true"/>
     <menuseparator id="placesContext_newSeparator"/>
     <menuitem id="placesContext_createBookmark"
@@ -176,13 +173,14 @@
               command="placesCmd_copy"
               label="&copyCmd.label;"
               closemenu="single"
-              accesskey="&copyCmd.accesskey;"/>
+              accesskey="&copyCmd.accesskey;" 
+              selection="any"/>
     <menuitem id="placesContext_paste"
               command="placesCmd_paste"
               label="&pasteCmd.label;"
               closemenu="single"
               accesskey="&pasteCmd.accesskey;"
-              selectiontype="any"
+              selection="any"
               hideifnoinsertionpoint="true"/>
     <menuseparator id="placesContext_editSeparator"/>
     <menuitem id="placesContext_delete"
@@ -208,19 +206,28 @@
               hideifprivatebrowsing="true"
               forcehideselection="bookmark"/>
     <menuseparator id="placesContext_deleteSeparator"/>
-    <menuitem id="placesContext_sortBy:name"
-              command="placesCmd_sortBy:name"
-              label="&cmd.sortby_name.label;"
-              accesskey="&cmd.context_sortby_name.accesskey;"
-              closemenu="single"
-              selection="folder"/>
     <menuitem id="placesContext_reload"
               command="placesCmd_reload"
               label="&cmd.reloadLivebookmark.label;"
               accesskey="&cmd.reloadLivebookmark.accesskey;"
               closemenu="single"
               selection="livemark/feedURI"/>
+    <menuitem id="placesContext_sortBy:name"
+              command="placesCmd_sortBy:name"
+              label="&cmd.sortby_name.label;"
+              accesskey="&cmd.context_sortby_name.accesskey;"
+              closemenu="single"
+              selection="folder"/>
     <menuseparator id="placesContext_sortSeparator"/>
+    <menuitem id="placesContext_openParentFolder"
+              command="placesCmd_openParentFolder"
+              label="&cmd.openParentFolder.label;"
+              key="key_placesCmd_openParentFolder"
+              accesskey="&cmd.openParentFolder.accesskey;"
+              selectiontype="single"
+              selection="bookmark"
+              forcehideselection="livemarkChild|livemark/feedURI|PlacesOrganizer/OrganizerQuery"/>
+    <menuseparator id="placesContext_parentFolderSeparator"/>
     <menuitem id="placesContext_show:info"
               command="placesCmd_show:info"
               label="&cmd.properties.label;" 

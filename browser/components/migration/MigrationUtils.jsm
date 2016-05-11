@@ -45,10 +45,13 @@ function getMigrationBundle() {
  * but it will soon be exposed properly.
  */
 function getMigratorKeyForDefaultBrowser() {
+  // Don't map Firefox to the Firefox migrator, because we don't
+  // expect it to ever show up as an option in the wizard.
+  // We may want to revise this if/when we use separate profiles
+  // for each Firefox-update channel.
   const APP_DESC_TO_KEY = {
     "Internet Explorer": "ie",
     "Safari":            "safari",
-    "Firefox":           "firefox",
     "Google Chrome":     "chrome",  // Windows, Linux
     "Chrome":            "chrome",  // OS X
   };
@@ -89,10 +92,7 @@ this.MigratorPrototype = {
   /**
    * OVERRIDE IF AND ONLY IF the source supports multiple profiles.
    *
-   * Returns array of profile objects from which data may be imported. The object
-   * should have the following keys:
-   *   id - a unique string identifier for the profile
-   *   name - a pretty name to display to the user in the UI
+   * Returns array of profiles (by names) from which data may be imported.
    *
    * Only profiles from which data can be imported should be listed.  Otherwise
    * the behavior of the migration wizard isn't well-defined.
@@ -313,15 +313,14 @@ this.MigratorPrototype = {
 
   /*** PRIVATE STUFF - DO NOT OVERRIDE ***/
   _getMaybeCachedResources: function PMB__getMaybeCachedResources(aProfile) {
-    let profileKey = aProfile ? aProfile.id : "";
     if (this._resourcesByProfile) {
-      if (profileKey in this._resourcesByProfile)
-        return this._resourcesByProfile[profileKey];
+      if (aProfile in this._resourcesByProfile)
+        return this._resourcesByProfile[aProfile];
     }
     else {
       this._resourcesByProfile = { };
     }
-    return this._resourcesByProfile[profileKey] = this.getResources(aProfile);
+    return this._resourcesByProfile[aProfile] = this.getResources(aProfile);
   }
 };
 
@@ -333,8 +332,7 @@ this.MigrationUtils = Object.freeze({
     FORMDATA:   Ci.nsIBrowserProfileMigrator.FORMDATA,
     PASSWORDS:  Ci.nsIBrowserProfileMigrator.PASSWORDS,
     BOOKMARKS:  Ci.nsIBrowserProfileMigrator.BOOKMARKS,
-    OTHERDATA:  Ci.nsIBrowserProfileMigrator.OTHERDATA,
-    SESSION:    Ci.nsIBrowserProfileMigrator.SESSION,
+    OTHERDATA:  Ci.nsIBrowserProfileMigrator.OTHERDATA
   },
 
   /**
@@ -482,11 +480,11 @@ this.MigrationUtils = Object.freeze({
   get migrators() {
     let migratorKeysOrdered = [
 #ifdef XP_WIN
-      "firefox", "ie", "chrome", "safari"
+      "ie", "chrome", "safari"
 #elifdef XP_MACOSX
-      "firefox", "safari", "chrome"
+      "safari", "chrome"
 #elifdef XP_UNIX
-      "firefox", "chrome"
+      "chrome"
 #endif
     ];
 

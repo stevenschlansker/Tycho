@@ -37,29 +37,17 @@
 
 #ifdef XP_WIN
 // we want a wmain entry point
-#ifdef MOZ_ASAN
-// ASAN requires firefox.exe to be built with -MD, and it's OK if we don't
-// support Windows XP SP2 in ASAN builds.
-#define XRE_DONT_SUPPORT_XPSP2
-#endif
 #include "nsWindowsWMain.cpp"
-#if defined(_MSC_VER) && (_MSC_VER < 1900)
 #define snprintf _snprintf
-#endif
 #define strcasecmp _stricmp
 #endif
 #include "BinaryPath.h"
 
 #include "nsXPCOMPrivate.h" // for MAXPATHLEN and XPCOM_DLL
-
-#include "mozilla/Telemetry.h"
-#include "mozilla/WindowsDllBlocklist.h"
+#include "mozilla/StartupTimeline.h"
 
 using namespace mozilla;
 
-#ifdef XP_MACOSX
-#define kOSXResourcesFolder "Resources"
-#endif
 #define kDesktopFolder "browser"
 #define kMetroFolder "metro"
 #define kMetroAppIniFilename "metroapp.ini"
@@ -89,19 +77,10 @@ static void Output(const char *fmt, ... )
 #if MOZ_WINCONSOLE
   fwprintf_s(stderr, wide_msg);
 #else
-  // Linking user32 at load-time interferes with the DLL blocklist (bug 932100).
-  // This is a rare codepath, so we can load user32 at run-time instead.
-  HMODULE user32 = LoadLibraryW(L"user32.dll");
-  if (user32) {
-    decltype(MessageBoxW)* messageBoxW =
-      (decltype(MessageBoxW)*) GetProcAddress(user32, "MessageBoxW");
-    if (messageBoxW) {
-      messageBoxW(nullptr, wide_msg, L"Firefox", MB_OK
-                                               | MB_ICONERROR
-                                               | MB_SETFOREGROUND);
-    }
-    FreeLibrary(user32);
-  }
+  MessageBoxW(nullptr, 
+              wide_msg,
+              L"Pale Moon",
+              MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
 #endif
 #endif
 
@@ -128,7 +107,7 @@ static bool IsArg(const char* arg, const char* s)
   return false;
 }
 
-#if defined(XP_WIN) && defined(MOZ_METRO)
+#ifdef XP_WIN
 /*
  * AttachToTestHarness - Windows helper for when we are running
  * in the immersive environment. Firefox is launched by Windows in
@@ -165,7 +144,9 @@ static void AttachToTestHarness()
 XRE_GetFileFromPathType XRE_GetFileFromPath;
 XRE_CreateAppDataType XRE_CreateAppData;
 XRE_FreeAppDataType XRE_FreeAppData;
-XRE_TelemetryAccumulateType XRE_TelemetryAccumulate;
+#ifdef XRE_HAS_DLL_BLOCKLIST
+XRE_SetupDllBlocklistType XRE_SetupDllBlocklist;
+#endif
 XRE_StartupTimelineRecordType XRE_StartupTimelineRecord;
 XRE_mainType XRE_main;
 XRE_StopLateWriteChecksType XRE_StopLateWriteChecks;
@@ -174,7 +155,9 @@ static const nsDynamicFunctionLoad kXULFuncs[] = {
     { "XRE_GetFileFromPath", (NSFuncPtr*) &XRE_GetFileFromPath },
     { "XRE_CreateAppData", (NSFuncPtr*) &XRE_CreateAppData },
     { "XRE_FreeAppData", (NSFuncPtr*) &XRE_FreeAppData },
-    { "XRE_TelemetryAccumulate", (NSFuncPtr*) &XRE_TelemetryAccumulate },
+#ifdef XRE_HAS_DLL_BLOCKLIST
+    { "XRE_SetupDllBlocklist", (NSFuncPtr*) &XRE_SetupDllBlocklist },
+#endif
     { "XRE_StartupTimelineRecord", (NSFuncPtr*) &XRE_StartupTimelineRecord },
     { "XRE_main", (NSFuncPtr*) &XRE_main },
     { "XRE_StopLateWriteChecks", (NSFuncPtr*) &XRE_StopLateWriteChecks },
@@ -187,7 +170,7 @@ static int do_main(int argc, char* argv[], nsIFile *xreDirectory)
   nsresult rv;
   uint32_t mainFlags = 0;
 
-  // Allow firefox.exe to launch XULRunner apps via -app <application.ini>
+  // Allow palemoon.exe to launch XULRunner apps via -app <application.ini>
   // Note that -app must be the *first* argument.
   const char *appDataFile = getenv("XUL_APP_FILE");
   if (appDataFile && *appDataFile) {
@@ -236,38 +219,6 @@ static int do_main(int argc, char* argv[], nsIFile *xreDirectory)
 
   bool metroOnDesktop = false;
 
-#ifdef MOZ_METRO
-  if (argc > 1) {
-    // This command-line flag is passed to our executable when it is to be
-    // launched in metro mode (i.e. our EXE is registered as the default
-    // browser and the user has tapped our EXE's tile)
-    if (IsArg(argv[1], "ServerName:DefaultBrowserServer")) {
-      mainFlags = XRE_MAIN_FLAG_USE_METRO;
-      argv[1] = argv[0];
-      argv++;
-      argc--;
-    } else if (IsArg(argv[1], "BackgroundSessionClosed")) {
-      // This command line flag is used for indirect shutdowns, the OS
-      // relaunches Metro Firefox with this command line arg.
-      mainFlags = XRE_MAIN_FLAG_USE_METRO;
-    } else {
-#ifndef RELEASE_BUILD
-      // This command-line flag is used to test the metro browser in a desktop
-      // environment.
-      for (int idx = 1; idx < argc; idx++) {
-        if (IsArg(argv[idx], "metrodesktop")) {
-          metroOnDesktop = true;
-          // Disable crash reporting when running in metrodesktop mode.
-          char crashSwitch[] = "MOZ_CRASHREPORTER_DISABLE=1";
-          putenv(crashSwitch);
-          break;
-        } 
-      }
-#endif
-    }
-  }
-#endif
-
   // Desktop browser launch
   if (mainFlags != XRE_MAIN_FLAG_USE_METRO && !metroOnDesktop) {
     ScopedAppData appData(&sAppData);
@@ -280,9 +231,7 @@ static int do_main(int argc, char* argv[], nsIFile *xreDirectory)
 
     nsCOMPtr<nsIFile> greDir;
     exeFile->GetParent(getter_AddRefs(greDir));
-#ifdef XP_MACOSX
-    greDir->SetNativeLeafName(NS_LITERAL_CSTRING(kOSXResourcesFolder));
-#endif
+
     nsCOMPtr<nsIFile> appSubdir;
     greDir->Clone(getter_AddRefs(appSubdir));
     appSubdir->Append(NS_LITERAL_STRING(kDesktopFolder));
@@ -293,105 +242,6 @@ static int do_main(int argc, char* argv[], nsIFile *xreDirectory)
 
     return XRE_main(argc, argv, &appData, mainFlags);
   }
-
-  // Metro browser launch
-#ifdef MOZ_METRO
-  nsCOMPtr<nsIFile> iniFile, appSubdir;
-
-  xreDirectory->Clone(getter_AddRefs(iniFile));
-  xreDirectory->Clone(getter_AddRefs(appSubdir));
-
-  iniFile->Append(NS_LITERAL_STRING(kMetroFolder));
-  iniFile->Append(NS_LITERAL_STRING(kMetroAppIniFilename));
-
-  appSubdir->Append(NS_LITERAL_STRING(kMetroFolder));
-
-  nsAutoCString path;
-  if (NS_FAILED(iniFile->GetNativePath(path))) {
-    Output("Couldn't get ini file path.\n");
-    return 255;
-  }
-
-  nsXREAppData *appData;
-  rv = XRE_CreateAppData(iniFile, &appData);
-  if (NS_FAILED(rv) || !appData) {
-    Output("Couldn't read application.ini");
-    return 255;
-  }
-
-  SetStrongPtr(appData->directory, static_cast<nsIFile*>(appSubdir.get()));
-  // xreDirectory already has a refcount from NS_NewLocalFile
-  appData->xreDirectory = xreDirectory;
-
-#ifdef XP_WIN
-  if (!metroOnDesktop) {
-    nsCOMPtr<nsIFile> testFile;
-
-    xreDirectory->Clone(getter_AddRefs(testFile));
-    testFile->Append(NS_LITERAL_STRING(kMetroTestFile));
-
-    nsAutoCString path;
-    if (NS_FAILED(testFile->GetNativePath(path))) {
-      Output("Couldn't get test file path.\n");
-      return 255;
-    }
-
-    // Check for a metro test harness command line args file
-    HANDLE hTestFile = CreateFileA(path.get(),
-                                   GENERIC_READ,
-                                   0, nullptr, OPEN_EXISTING,
-                                   FILE_ATTRIBUTE_NORMAL,
-                                   nullptr);
-    if (hTestFile != INVALID_HANDLE_VALUE) {
-      // Typical test harness command line args string is around 100 bytes.
-      char buffer[1024];
-      memset(buffer, 0, sizeof(buffer));
-      DWORD bytesRead = 0;
-      if (!ReadFile(hTestFile, (VOID*)buffer, sizeof(buffer)-1,
-                    &bytesRead, nullptr) || !bytesRead) {
-        CloseHandle(hTestFile);
-        printf("failed to read test file '%s'", testFile);
-        return -1;
-      }
-      CloseHandle(hTestFile);
-
-      // Build new args array
-      char* newArgv[20];
-      int newArgc = 1;
-
-      memset(newArgv, 0, sizeof(newArgv));
-
-      char* ptr = buffer;
-      newArgv[0] = ptr;
-      while (*ptr != '\0' &&
-             (ptr - buffer) < sizeof(buffer) &&
-             newArgc < ARRAYSIZE(newArgv)) {
-        if (isspace(*ptr)) {
-          *ptr = '\0';
-          ptr++;
-          newArgv[newArgc] = ptr;
-          newArgc++;
-          continue;
-        }
-        ptr++;
-      }
-      if (ptr == newArgv[newArgc-1])
-        newArgc--;
-
-      // attach browser stdout to metrotestharness stdout
-      AttachToTestHarness();
-
-      int result = XRE_main(newArgc, newArgv, appData, mainFlags);
-      XRE_FreeAppData(appData);
-      return result;
-    }
-  }
-#endif
-
-  int result = XRE_main(argc, argv, appData, mainFlags);
-  XRE_FreeAppData(appData);
-  return result;
-#endif
 
   NS_NOTREACHED("browser do_main failed to pickup proper initialization");
   return 255;
@@ -572,18 +422,10 @@ InitXPCOMGlue(const char *argv0, nsIFile **xreDirectory)
     return rv;
   }
 
-#ifndef MOZ_METRO
-  // This will set this thread as the main thread, which in metro land is
-  // wrong. We initialize this later from the right thread in nsAppRunner.
   NS_LogInit();
-#endif
 
   // chop XPCOM_DLL off exePath
   *lastSlash = '\0';
-#ifdef XP_MACOSX
-  lastSlash = strrchr(exePath, XPCOM_FILE_PATH_SEPARATOR[0]);
-  strcpy(lastSlash + 1, kOSXResourcesFolder);
-#endif
 #ifdef XP_WIN
   rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(exePath), false,
                        xreDirectory);
@@ -613,23 +455,9 @@ int main(int argc, char* argv[])
 #elif defined(XP_WIN)
   IO_COUNTERS ioCounters;
   gotCounters = GetProcessIoCounters(GetCurrentProcess(), &ioCounters);
-#else
-  #error "Unknown platform"  // having this here keeps cppcheck happy
 #endif
 
   nsIFile *xreDirectory;
-
-#ifdef HAS_DLL_BLOCKLIST
-  DllBlocklist_Initialize();
-
-#ifdef DEBUG
-  // In order to be effective against AppInit DLLs, the blocklist must be
-  // initialized before user32.dll is loaded into the process (bug 932100).
-  if (GetModuleHandleA("user32.dll")) {
-    fprintf(stderr, "DLL blocklist was unable to intercept AppInit DLLs.\n");
-  }
-#endif
-#endif
 
   nsresult rv = InitXPCOMGlue(argv[0], &xreDirectory);
   if (NS_FAILED(rv)) {
@@ -638,31 +466,9 @@ int main(int argc, char* argv[])
 
   XRE_StartupTimelineRecord(mozilla::StartupTimeline::START, start);
 
-  if (gotCounters) {
-#if defined(XP_WIN)
-    XRE_TelemetryAccumulate(mozilla::Telemetry::EARLY_GLUESTARTUP_READ_OPS,
-                            int(ioCounters.ReadOperationCount));
-    XRE_TelemetryAccumulate(mozilla::Telemetry::EARLY_GLUESTARTUP_READ_TRANSFER,
-                            int(ioCounters.ReadTransferCount / 1024));
-    IO_COUNTERS newIoCounters;
-    if (GetProcessIoCounters(GetCurrentProcess(), &newIoCounters)) {
-      XRE_TelemetryAccumulate(mozilla::Telemetry::GLUESTARTUP_READ_OPS,
-                              int(newIoCounters.ReadOperationCount - ioCounters.ReadOperationCount));
-      XRE_TelemetryAccumulate(mozilla::Telemetry::GLUESTARTUP_READ_TRANSFER,
-                              int((newIoCounters.ReadTransferCount - ioCounters.ReadTransferCount) / 1024));
-    }
-#elif defined(XP_UNIX)
-    XRE_TelemetryAccumulate(mozilla::Telemetry::EARLY_GLUESTARTUP_HARD_FAULTS,
-                            int(initialRUsage.ru_majflt));
-    struct rusage newRUsage;
-    if (!getrusage(RUSAGE_SELF, &newRUsage)) {
-      XRE_TelemetryAccumulate(mozilla::Telemetry::GLUESTARTUP_HARD_FAULTS,
-                              int(newRUsage.ru_majflt - initialRUsage.ru_majflt));
-    }
-#else
-  #error "Unknown platform"  // having this here keeps cppcheck happy
+#ifdef XRE_HAS_DLL_BLOCKLIST
+  XRE_SetupDllBlocklist();
 #endif
-  }
 
   int result = do_main(argc, argv, xreDirectory);
 

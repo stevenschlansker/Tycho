@@ -1,3 +1,4 @@
+/* -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -5,14 +6,13 @@
 const nsIPermissionManager = Components.interfaces.nsIPermissionManager;
 const nsICookiePermission = Components.interfaces.nsICookiePermission;
 
-const NOTIFICATION_FLUSH_PERMISSIONS = "flush-pending-permissions";
-
-function Permission(host, rawHost, type, capability) 
+function Permission(host, rawHost, type, capability, perm) 
 {
   this.host = host;
   this.rawHost = rawHost;
   this.type = type;
   this.capability = capability;
+  this.perm = perm;
 }
 
 var gPermissionManager = {
@@ -103,7 +103,7 @@ var gPermissionManager = {
         // Avoid calling the permission manager if the capability settings are
         // the same. Otherwise allow the call to the permissions manager to
         // update the listbox for us.
-        exists = this._permissions[i].capability == capabilityString;
+        exists = this._permissions[i].perm == aCapability;
         break;
       }
     }
@@ -181,23 +181,8 @@ var gPermissionManager = {
     var urlLabel = document.getElementById("urlLabel");
     urlLabel.hidden = !urlFieldVisible;
 
-    let treecols = document.getElementsByTagName("treecols")[0];
-    treecols.addEventListener("click", event => {
-      if (event.target.nodeName != "treecol" || event.button != 0) {
-        return;
-      }
-
-      let sortField = event.target.getAttribute("data-field-name");
-      if (!sortField) {
-        return;
-      }
-
-      gPermissionManager.onPermissionSort(sortField);
-    });
-
     var os = Components.classes["@mozilla.org/observer-service;1"]
                        .getService(Components.interfaces.nsIObserverService);
-    os.notifyObservers(null, NOTIFICATION_FLUSH_PERMISSIONS, this._type);
     os.addObserver(this, "perm-changed", false);
 
     this._loadPermissions();
@@ -216,11 +201,6 @@ var gPermissionManager = {
   {
     if (aTopic == "perm-changed") {
       var permission = aSubject.QueryInterface(Components.interfaces.nsIPermission);
-
-      // Ignore unrelated permission types.
-      if (permission.type != this._type)
-        return;
-
       if (aData == "added") {
         this._addPermissionToList(permission);
         ++this._view._rowCount;
@@ -249,17 +229,10 @@ var gPermissionManager = {
         }
         this._tree.treeBoxObject.invalidate();
       }
-      else if (aData == "deleted") {
-        for (var i = 0; i < this._permissions.length; i++) {
-          if (this._permissions[i].host == permission.host) {
-            this._permissions.splice(i, 1);
-            this._view._rowCount--;
-            this._tree.treeBoxObject.rowCountChanged(this._view.rowCount - 1, -1);
-            this._tree.treeBoxObject.invalidate();
-            break;
-          }
-        }
-      }
+      // No UI other than this window causes this method to be sent a "deleted"
+      // notification, so we don't need to implement it since Delete is handled
+      // directly by the Permission Removal handlers. If that ever changes, those
+      // implementations will have to move into here. 
     }
   },
   
@@ -301,11 +274,7 @@ var gPermissionManager = {
   
   onPermissionKeyPress: function (aEvent)
   {
-    if (aEvent.keyCode == KeyEvent.DOM_VK_DELETE
-#ifdef XP_MACOSX
-        || aEvent.keyCode == KeyEvent.DOM_VK_BACK_SPACE
-#endif
-       )
+    if (aEvent.keyCode == 46)
       this.onPermissionDeleted();
   },
   
@@ -345,7 +314,7 @@ var gPermissionManager = {
     this._view._rowCount = this._permissions.length;
 
     // sort and display the table
-    this._tree.view = this._view;
+    this._tree.treeBoxObject.view = this._view;
     this.onPermissionSort("rawHost", false);
 
     // disable "remove all" button if there are none
@@ -363,7 +332,8 @@ var gPermissionManager = {
       var p = new Permission(host,
                              (host.charAt(0) == ".") ? host.substring(1,host.length) : host,
                              aPermission.type,
-                             capabilityString);
+                             capabilityString, 
+                             aPermission.capability);
       this._permissions.push(p);
     }  
   },
@@ -383,3 +353,4 @@ function initWithParams(aParams)
 {
   gPermissionManager.init(aParams);
 }
+

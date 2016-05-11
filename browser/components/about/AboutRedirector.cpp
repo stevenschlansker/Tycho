@@ -11,6 +11,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "nsDOMString.h"
 
+
 namespace mozilla {
 namespace browser {
 
@@ -42,17 +43,6 @@ static RedirEntry kRedirMap[] = {
 #endif
   { "certerror", "chrome://browser/content/certerror/aboutCertError.xhtml",
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-    nsIAboutModule::URI_CAN_LOAD_IN_CHILD |
-    nsIAboutModule::ALLOW_SCRIPT |
-    nsIAboutModule::HIDE_FROM_ABOUTABOUT },
-  { "socialerror", "chrome://browser/content/aboutSocialError.xhtml",
-    nsIAboutModule::ALLOW_SCRIPT |
-    nsIAboutModule::HIDE_FROM_ABOUTABOUT },
-  { "providerdirectory", "chrome://browser/content/aboutProviderDirectory.xhtml",
-    nsIAboutModule::ALLOW_SCRIPT |
-    nsIAboutModule::HIDE_FROM_ABOUTABOUT },
-  { "tabcrashed", "chrome://browser/content/aboutTabCrashed.xhtml",
-    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
     nsIAboutModule::ALLOW_SCRIPT |
     nsIAboutModule::HIDE_FROM_ABOUTABOUT },
   { "feeds", "chrome://browser/content/feeds/subscribe.xhtml",
@@ -69,12 +59,16 @@ static RedirEntry kRedirMap[] = {
 #endif
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
     nsIAboutModule::ALLOW_SCRIPT },
+  { "palemoon", "chrome://global/content/palemoon.xhtml",
+    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+    nsIAboutModule::HIDE_FROM_ABOUTABOUT },
+  { "logopage", "chrome://global/content/logopage.xhtml",
+    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+    nsIAboutModule::HIDE_FROM_ABOUTABOUT },
   { "robots", "chrome://browser/content/aboutRobots.xhtml",
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
     nsIAboutModule::ALLOW_SCRIPT },
   { "sessionrestore", "chrome://browser/content/aboutSessionRestore.xhtml",
-    nsIAboutModule::ALLOW_SCRIPT },
-  { "welcomeback", "chrome://browser/content/aboutWelcomeBack.xhtml",
     nsIAboutModule::ALLOW_SCRIPT },
 #ifdef MOZ_SERVICES_SYNC
   { "sync-progress", "chrome://browser/content/sync/progress.xhtml",
@@ -84,45 +78,13 @@ static RedirEntry kRedirMap[] = {
 #endif
   { "home", "chrome://browser/content/abouthome/aboutHome.xhtml",
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-    nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
-    nsIAboutModule::ALLOW_SCRIPT |
-    nsIAboutModule::ENABLE_INDEXED_DB },
+    nsIAboutModule::ALLOW_SCRIPT },
   { "newtab", "chrome://browser/content/newtab/newTab.xul",
     nsIAboutModule::ALLOW_SCRIPT },
   { "permissions", "chrome://browser/content/preferences/aboutPermissions.xul",
     nsIAboutModule::ALLOW_SCRIPT },
-  { "preferences", "chrome://browser/content/preferences/in-content/preferences.xul",
-    nsIAboutModule::ALLOW_SCRIPT },
   { "downloads", "chrome://browser/content/downloads/contentAreaDownloadsView.xul",
     nsIAboutModule::ALLOW_SCRIPT },
-#ifdef MOZ_SERVICES_HEALTHREPORT
-  { "healthreport", "chrome://browser/content/abouthealthreport/abouthealth.xhtml",
-    nsIAboutModule::ALLOW_SCRIPT },
-#endif
-  { "accounts", "chrome://browser/content/aboutaccounts/aboutaccounts.xhtml",
-    nsIAboutModule::ALLOW_SCRIPT },
-  { "app-manager", "chrome://browser/content/devtools/app-manager/index.xul",
-    nsIAboutModule::ALLOW_SCRIPT },
-  { "customizing", "chrome://browser/content/customizableui/aboutCustomizing.xul",
-    nsIAboutModule::ALLOW_SCRIPT },
-  { "loopconversation", "chrome://browser/content/loop/conversation.html",
-    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-    nsIAboutModule::ALLOW_SCRIPT |
-    nsIAboutModule::HIDE_FROM_ABOUTABOUT |
-    nsIAboutModule::ENABLE_INDEXED_DB },
-  { "looppanel", "chrome://browser/content/loop/panel.html",
-    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-    nsIAboutModule::ALLOW_SCRIPT |
-    nsIAboutModule::HIDE_FROM_ABOUTABOUT |
-    nsIAboutModule::ENABLE_INDEXED_DB,
-    // Shares an IndexedDB origin with about:loopconversation.
-    "loopconversation" },
-  { "reader", "chrome://global/content/reader/aboutReader.html",
-    nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-    nsIAboutModule::ALLOW_SCRIPT |
-    nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
-    nsIAboutModule::MAKE_UNLINKABLE |
-    nsIAboutModule::HIDE_FROM_ABOUTABOUT },
 };
 static const int kRedirTotal = ArrayLength(kRedirMap);
 
@@ -161,13 +123,8 @@ AboutRedirector::NewChannel(nsIURI* aURI,
   for (int i = 0; i < kRedirTotal; i++) {
     if (!strcmp(path.get(), kRedirMap[i].id)) {
       nsCOMPtr<nsIChannel> tempChannel;
-      nsCOMPtr<nsIURI> tempURI;
-      rv = NS_NewURI(getter_AddRefs(tempURI),
-                     nsDependentCString(kRedirMap[i].url));
-      NS_ENSURE_SUCCESS(rv, rv);
-      rv = NS_NewChannelInternal(getter_AddRefs(tempChannel),
-                                 tempURI,
-                                 aLoadInfo);
+      rv = ioService->NewChannel(nsDependentCString(kRedirMap[i].url),
+                                 nullptr, nullptr, getter_AddRefs(tempChannel));
       NS_ENSURE_SUCCESS(rv, rv);
 
       tempChannel->SetOriginalURI(aURI);
@@ -219,6 +176,7 @@ AboutRedirector::GetIndexedDBOriginPostfix(nsIURI *aURI, nsAString &result)
   SetDOMStringToNull(result);
   return NS_ERROR_ILLEGAL_VALUE;
 }
+
 
 nsresult
 AboutRedirector::Create(nsISupports *aOuter, REFNSIID aIID, void **result)

@@ -12,6 +12,8 @@
 %advancedDTD;
 <!ENTITY % privacyDTD SYSTEM "chrome://browser/locale/preferences/privacy.dtd">
 %privacyDTD;
+<!ENTITY % palemoonDTD SYSTEM "chrome://browser/locale/palemoon.dtd">
+%palemoonDTD;
 ]>
 
 <overlay id="AdvancedPaneOverlay"
@@ -27,9 +29,10 @@
       <!--XXX button prefs -->
 
       <!-- General tab -->
-      <preference id="accessibility.browsewithcaret"   name="accessibility.browsewithcaret"   type="bool"/>
+<!-- Pale Moon: remove accessibility features, they confuse people anyway  -->
+<!--      <preference id="accessibility.browsewithcaret"   name="accessibility.browsewithcaret"   type="bool"/> -->
       <preference id="accessibility.typeaheadfind"     name="accessibility.typeaheadfind"     type="bool"/>
-      <preference id="accessibility.blockautorefresh"  name="accessibility.blockautorefresh"  type="bool"/>
+<!--      <preference id="accessibility.blockautorefresh"  name="accessibility.blockautorefresh"  type="bool"/> -->
 
       <preference id="general.autoScroll"              name="general.autoScroll"              type="bool"/>
       <preference id="general.smoothScroll"            name="general.smoothScroll"            type="bool"/>
@@ -40,13 +43,18 @@
 #endif
       <preference id="layout.spellcheckDefault"        name="layout.spellcheckDefault"        type="int"/>
 
-      <!-- Data Choices tab -->
+#ifdef HAVE_SHELL_SERVICE
+      <preference id="browser.shell.checkDefaultBrowser"
+                  name="browser.shell.checkDefaultBrowser"
+                  type="bool"/>
 
-#ifdef MOZ_TELEMETRY_REPORTING
-      <preference id="toolkit.telemetry.enabled"
-                  name="toolkit.telemetry.enabled"
+      <preference id="pref.general.disable_button.default_browser"
+                  name="pref.general.disable_button.default_browser"
                   type="bool"/>
 #endif
+      <preference id="pref.general.compatmode.firefox" name="general.useragent.compatMode.firefox"        type="bool"/>
+
+      <!-- Data Choices tab -->
 
       <!-- Network tab -->
       <preference id="browser.cache.disk.capacity"     name="browser.cache.disk.capacity"     type="int"/>
@@ -61,27 +69,16 @@
 #ifdef MOZ_UPDATER
       <preference id="app.update.enabled"              name="app.update.enabled"              type="bool"/>
       <preference id="app.update.auto"                 name="app.update.auto"                 type="bool"/>
-#ifdef XP_WIN
-#ifdef MOZ_METRO
-      <preference id="app.update.metro.enabled"        name="app.update.metro.enabled"        type="bool"/>
-#endif
-#endif
       <preference id="app.update.mode"                 name="app.update.mode"                 type="int"/>
 
       <preference id="app.update.disable_button.showUpdateHistory"
                   name="app.update.disable_button.showUpdateHistory"
                   type="bool"/>
-
-#ifdef MOZ_MAINTENANCE_SERVICE
-      <preference id="app.update.service.enabled"
-                  name="app.update.service.enabled"
-                  type="bool"/>
-#endif
 #endif
 
       <preference id="browser.search.update"           name="browser.search.update"           type="bool"/>
 
-      <!-- Certificates tab -->
+      <!-- Encryption tab -->
       <preference id="security.default_personal_cert"  name="security.default_personal_cert"  type="string"/>
 
       <preference id="security.disable_button.openCertManager"
@@ -90,9 +87,19 @@
       <preference id="security.disable_button.openDeviceManager"
                   name="security.disable_button.openDeviceManager"
                   type="bool"/>
-      <preference id="security.OCSP.enabled"
-                  name="security.OCSP.enabled"
-                  type="int"/>
+      <!-- Pale Moon: smooth scrolling tab -->
+      <preference id="general.smoothScroll.lines"                    name="general.smoothScroll.lines"                    type="bool"/>
+      <preference id="general.smoothScroll.lines.durationMinMS"      name="general.smoothScroll.lines.durationMinMS"      type="int"/>
+      <preference id="general.smoothScroll.lines.durationMaxMS"      name="general.smoothScroll.lines.durationMaxMS"      type="int"/>
+      <preference id="general.smoothScroll.pages"                    name="general.smoothScroll.pages"                    type="bool"/>
+      <preference id="general.smoothScroll.pages.durationMinMS"      name="general.smoothScroll.pages.durationMinMS"      type="int"/>
+      <preference id="general.smoothScroll.pages.durationMaxMS"      name="general.smoothScroll.pages.durationMaxMS"      type="int"/>
+      <preference id="general.smoothScroll.mouseWheel"               name="general.smoothScroll.mouseWheel"                   type="bool"/>
+      <preference id="general.smoothScroll.mouseWheel.durationMinMS" name="general.smoothScroll.mouseWheel.durationMinMS"     type="int"/>
+      <preference id="general.smoothScroll.mouseWheel.durationMaxMS" name="general.smoothScroll.mouseWheel.durationMaxMS"     type="int"/>
+      <preference id="general.smoothScroll.scrollbars"               name="general.smoothScroll.scrollbars"               type="bool"/>
+      <preference id="general.smoothScroll.scrollbars.durationMinMS" name="general.smoothScroll.scrollbars.durationMinMS" type="int"/>
+      <preference id="general.smoothScroll.scrollbars.durationMaxMS" name="general.smoothScroll.scrollbars.durationMaxMS" type="int"/>
     </preferences>
 
 #ifdef HAVE_SHELL_SERVICE
@@ -108,12 +115,10 @@
 
       <tabs id="tabsElement">
         <tab id="generalTab" label="&generalTab.label;" helpTopic="prefs-advanced-general"/>
-#ifdef MOZ_DATA_REPORTING
-        <tab id="dataChoicesTab" label="&dataChoicesTab.label;" helpTopic="prefs-advanced-data-choices"/>
-#endif
         <tab id="networkTab" label="&networkTab.label;" helpTopic="prefs-advanced-network"/>
         <tab id="updateTab" label="&updateTab.label;"  helpTopic="prefs-advanced-update"/>
         <tab id="encryptionTab" label="&certificateTab.label;" helpTopic="prefs-advanced-encryption"/>
+        <tab id="scrollparamTab" label="&palemoon.scrollparamTab.label;" helpTopic="prefs-advanced-scrollparams"/>      
       </tabs>
 
       <tabpanels flex="1">
@@ -122,21 +127,22 @@
         <tabpanel id="generalPanel" orient="vertical">
 
           <!-- Accessibility -->
+<!-- Pale Moon: remove accessibility features, they confuse people anyway  -->
           <groupbox id="accessibilityGroup" align="start">
             <caption label="&accessibility.label;"/>
 
-            <checkbox id="useCursorNavigation"
+<!--            <checkbox id="useCursorNavigation"
                       label="&useCursorNavigation.label;"
                       accesskey="&useCursorNavigation.accesskey;"
-                      preference="accessibility.browsewithcaret"/>
+                      preference="accessibility.browsewithcaret"/> -->
             <checkbox id="searchStartTyping"
                       label="&searchStartTyping.label;"
                       accesskey="&searchStartTyping.accesskey;"
                       preference="accessibility.typeaheadfind"/>
-            <checkbox id="blockAutoRefresh"
+<!--            <checkbox id="blockAutoRefresh"
                       label="&blockAutoRefresh.label;"
                       accesskey="&blockAutoRefresh.accesskey;"
-                      preference="accessibility.blockautorefresh"/>
+                      preference="accessibility.blockautorefresh"/> -->
           </groupbox>
 
           <!-- Browsing -->
@@ -147,10 +153,6 @@
                       label="&useAutoScroll.label;"
                       accesskey="&useAutoScroll.accesskey;"
                       preference="general.autoScroll"/>
-            <checkbox id="useSmoothScrolling"
-                      label="&useSmoothScrolling.label;"
-                      accesskey="&useSmoothScrolling.accesskey;"
-                      preference="general.smoothScroll"/>
             <checkbox id="allowHWAccel"
                       label="&allowHWAccel.label;"
                       accesskey="&allowHWAccel.accesskey;"
@@ -162,64 +164,33 @@
                       onsynctopreference="return gAdvancedPane.writeCheckSpelling();"
                       preference="layout.spellcheckDefault"/>
           </groupbox>
-        </tabpanel>
 
-#ifdef MOZ_DATA_REPORTING
-        <!-- Data Choices -->
-        <tabpanel id="dataChoicesPanel" orient="vertical">
-#ifdef MOZ_SERVICES_HEALTHREPORT
-          <groupbox>
-            <caption>
-              <checkbox id="submitHealthReportBox" label="&enableHealthReport.label;"
-                        oncommand="gAdvancedPane.updateSubmitHealthReport();"
-                        accesskey="&enableHealthReport.accesskey;"/>
-            </caption>
-            <vbox>
-              <hbox class="indent">
-                <label flex="1">&healthReportDesc.label;</label>
-                <spacer flex="10"/>
-                <label id="FHRLearnMore" class="text-link"
-                       value="&healthReportLearnMore.label;"
-                       onclick="gAdvancedPane.openTextLink(event)"/>
-              </hbox>
-#ifdef MOZ_TELEMETRY_REPORTING
-              <hbox class="indent">
-                <vbox flex="1">
-                  <checkbox id="submitTelemetryBox" label="&enableTelemetryData.label;"
-                            preference="toolkit.telemetry.enabled"
-                            accesskey="&enableTelemetryData.accesskey;"/>
-                  <hbox class="indent">
-                    <label id="telemetryDataDesc" flex="1">&telemetryDesc.label;</label>
-                    <spacer flex="10"/>
-                    <label id="telemetryLearnMore" class="text-link"
-                           value="&telemetryLearnMore.label;"
-                           onclick="gAdvancedPane.openTextLink(event)"/>
-                  </hbox>
-                </vbox>
-              </hbox>
-#endif
-            </vbox>
-          </groupbox>
-#endif
-#ifdef MOZ_CRASHREPORTER
-          <groupbox>
-            <caption>
-              <checkbox id="submitCrashesBox" label="&enableCrashReporter.label;"
-                        oncommand="gAdvancedPane.updateSubmitCrashes();"
-                        accesskey="&enableCrashReporter.accesskey;"/>
-            </caption>
+#ifdef HAVE_SHELL_SERVICE
+          <!-- System Defaults -->
+          <groupbox id="systemDefaultsGroup" orient="vertical">
+            <caption label="&systemDefaults.label;"/>
+
+            <checkbox id="alwaysCheckDefault" preference="browser.shell.checkDefaultBrowser"
+                      label="&alwaysCheckDefault.label;" accesskey="&alwaysCheckDefault.accesskey;"
+                      flex="1"/>
             <hbox class="indent">
-              <label flex="1">&crashReporterDesc.label;</label>
-              <spacer flex="10"/>
-              <label id="crashReporterLearnMore"
-                     class="text-link"
-                     value="&crashReporterLearnMore.label;"
-                     onclick="gAdvancedPane.openTextLink(event)"/>
+              <deck id="setDefaultPane">
+                <button id="setDefaultButton"
+                        label="&setDefault.label;" accesskey="&setDefault.accesskey;"
+                        oncommand="gAdvancedPane.setDefaultBrowser();"
+                        preference="pref.general.disable_button.default_browser"/>
+                <description>&isDefault.label;</description>
+              </deck>
             </hbox>
           </groupbox>
 #endif
+          <groupbox id="FirefoxCompatGroup" orient="vertical">
+            <caption label="&palemoon.firefoxCompatGroup.label;"/>
+            <checkbox id="palemoon.firefoxCompat.check" preference="pref.general.compatmode.firefox"
+                      label="&palemoon.firefoxCompat.label;" />
+          </groupbox>
         </tabpanel>
-#endif
+
         <!-- Network -->
         <tabpanel id="networkPanel" orient="vertical">
 
@@ -287,6 +258,7 @@
               <vbox flex="1">
                 <label id="offlineAppsListLabel">&offlineAppsList2.label;</label>
                 <listbox id="offlineAppsList"
+                         style="height: &offlineAppsList.height;;"
                          flex="1"
                          aria-labelledby="offlineAppsListLabel"
                          onselect="gAdvancedPane.offlineAppSelected(event);">
@@ -310,18 +282,6 @@
             <caption label="&updateApp.label;"/>
             <radiogroup id="updateRadioGroup"
                         oncommand="gAdvancedPane.updateWritePrefs();">
-#ifdef XP_WIN
-#ifdef MOZ_METRO
-              <radio id="autoMetro"
-                     value="autoMetro"
-                     label="&updateAutoMetro.label;"
-                     accesskey="&updateAutoMetro.accesskey;"/>
-              <hbox id="autoMetroIndent"
-                    class="indent">
-                <label value="&updateAutoMetroWarn.label;"/>
-              </hbox>
-#endif
-#endif
               <radio id="autoDesktop"
                      value="auto"
                      label="&updateAuto1.label;"
@@ -349,13 +309,6 @@
                       preference="app.update.disable_button.showUpdateHistory"
                       oncommand="gAdvancedPane.showUpdates();"/>
             </hbox>
-
-#ifdef MOZ_MAINTENANCE_SERVICE
-            <checkbox id="useService"
-                      label="&useService.label;"
-                      accesskey="&useService.accesskey;"
-                      preference="app.update.service.enabled"/>
-#endif
           </groupbox>
 #endif
           <groupbox id="updateOthers">
@@ -388,20 +341,14 @@
 
             <separator/>
 
-            <checkbox id="enableOCSP"
-                      label="&enableOCSP.label;"
-                      accesskey="&enableOCSP.accesskey;"
-                      onsyncfrompreference="return gAdvancedPane.readEnableOCSP();"
-                      onsynctopreference="return gAdvancedPane.writeEnableOCSP();"
-                      preference="security.OCSP.enabled"/>
-
-            <separator/>
-
             <hbox>
               <button id="viewCertificatesButton"
                       label="&viewCerts.label;" accesskey="&viewCerts.accesskey;"
                       oncommand="gAdvancedPane.showCertificates();"
                       preference="security.disable_button.openCertManager"/>
+              <button id="verificationButton"
+                      label="&verify2.label;" accesskey="&verify2.accesskey;"
+                      oncommand="gAdvancedPane.showOCSP();"/>
               <button id="viewSecurityDevicesButton"
                       label="&viewSecurityDevices.label;" accesskey="&viewSecurityDevices.accesskey;"
                       oncommand="gAdvancedPane.showSecurityDevices();"
@@ -409,6 +356,66 @@
             </hbox>
         </tabpanel>
 
+        <!-- Pale Moon: Scrolling tab -->
+        <tabpanel id="scrollparamTab" orient="vertical">
+
+        <checkbox id="useSmoothScrolling"
+                      label="&useSmoothScrolling.label;"
+                      accesskey="&useSmoothScrolling.accesskey;"
+                      preference="general.smoothScroll"/>
+                      
+        <label>&palemoon.smoothscroll.explain.label;</label>
+        
+        <groupbox>
+          <caption label="&palemoon.smoothscroll.params.label;"/>
+          
+          <checkbox label="&palemoon.smoothscroll.mousewheel.label;" preference="general.smoothScroll.mouseWheel"/>
+          <hbox align="center" class="indent">
+            <label value="&palemoon.smoothscroll.mousewheel.duration;"/>
+            <textbox type="number" size="3" max="500"
+                     preference="general.smoothScroll.mouseWheel.durationMinMS"/>
+            <label>&palemoon.smoothscroll.to;</label>
+            <textbox type="number" size="4" max="2000"
+                     preference="general.smoothScroll.mouseWheel.durationMaxMS"/>
+            <label flex="1">ms.</label>
+          </hbox>
+          
+          <checkbox label="&palemoon.smoothscroll.arrowkeys.label;" preference="general.smoothScroll.lines"/>
+          <hbox align="center" class="indent">
+            <label value="&palemoon.smoothscroll.arrowkeys.duration;"/>
+            <textbox type="number" size="3" max="500"
+                     preference="general.smoothScroll.lines.durationMinMS"/>
+            <label>&palemoon.smoothscroll.to;</label>
+            <textbox type="number" size="4" max="2000"
+                     preference="general.smoothScroll.lines.durationMaxMS"/>
+            <label flex="1">ms.</label>
+          </hbox>
+          
+          <checkbox label="&palemoon.smoothscroll.pagekeys.label;" preference="general.smoothScroll.pages"/>
+          <hbox align="center" class="indent">
+            <label value="&palemoon.smoothscroll.pagekeys.duration;"/>
+            <textbox type="number" size="3" max="500"
+                     preference="general.smoothScroll.pages.durationMinMS"/>
+            <label>&palemoon.smoothscroll.to;</label>
+            <textbox type="number" size="4" max="2000"
+                     preference="general.smoothScroll.pages.durationMaxMS"/>
+            <label flex="1">ms.</label>
+          </hbox>
+          
+          <checkbox label="&palemoon.smoothscroll.scrollbar.label;" preference="general.smoothScroll.scrollbars"/>
+          <hbox align="center" class="indent">
+            <label value="&palemoon.smoothscroll.scrollbar.duration;"/>
+            <textbox type="number" size="3" max="500"
+                     preference="general.smoothScroll.scrollbars.durationMinMS"/>
+            <label>&palemoon.smoothscroll.to;</label>
+            <textbox type="number" size="4" max="2000"
+                     preference="general.smoothScroll.scrollbars.durationMaxMS"/>
+            <label flex="1">ms.</label>
+          </hbox>
+        </groupbox>  
+        </tabpanel>
+        <!-- end Smooth scrolling tab -->
+         
       </tabpanels>
     </tabbox>
   </prefpane>

@@ -2,9 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#sanitizeDurationChoice {
+  -moz-margin-end: 0;
+}
+
 /* Align the duration label with the warning box and item list */
 #sanitizeDurationLabel {
-  -moz-margin-start: 1px;
+  -moz-margin-start: 3px;
 }
 
 
@@ -50,23 +54,28 @@
 /* Progressive disclosure button */
 #detailsExpanderWrapper {
   padding: 0;
-  margin-top: 6px;
-  margin-bottom: 6px;
+  margin: 6px 0;
 }
 
 .expander-up,
 .expander-down {
-  padding: 0;
+  min-width: 0;
   margin: 0;
 }
 
+.expander-up > .button-box,
+.expander-down > .button-box {
+  padding: 0;
+}
+
 .expander-up {
-  -moz-appearance: -moz-mac-disclosure-button-open;
+  list-style-image: url("chrome://browser/skin/places/expander-open.png");
 }
 
 .expander-down {
-  -moz-appearance: -moz-mac-disclosure-button-closed;
+  list-style-image: url("chrome://browser/skin/places/expander-closed.png");
 }
+
 
 /* Make the item list the same width as the warning box */
 #itemList {
@@ -74,18 +83,11 @@
   -moz-margin-end: 0;
 }
 
-/* Without this a useless scrollbar appears in the listbox when its rows
-   attribute is set to the total number of listitems, as it is currently.  See
-   bug 489958 comment 14 and bug 491788. */
-#itemList > listitem {
-  padding: 1px 0;
-}
-
 
 /* Align the last dialog button with the end of the warning box */
 .prefWindow-dlgbuttons {
   -moz-margin-end: 0;
 }
-.dialog-button[dlgtype="accept"] {
+.dialog-button[dlgtype="cancel"] {
   -moz-margin-end: 0;
 }

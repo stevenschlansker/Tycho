@@ -3,9 +3,11 @@
 %brandDTD;
 <!ENTITY % browserDTD SYSTEM "chrome://browser/locale/browser.dtd" >
 %browserDTD;
+<!ENTITY % palemoonDTD SYSTEM "chrome://browser/locale/palemoon.dtd" >
+%palemoonDTD;
 <!ENTITY % baseMenuDTD SYSTEM "chrome://browser/locale/baseMenuOverlay.dtd" >
 %baseMenuDTD;
-<!ENTITY % charsetDTD SYSTEM "chrome://global/locale/charsetMenu.dtd" >
+<!ENTITY % charsetDTD SYSTEM "chrome://browser/locale/charsetOverlay.dtd" >
 %charsetDTD;
 <!ENTITY % textcontextDTD SYSTEM "chrome://global/locale/textcontext.dtd" >
 %textcontextDTD;
@@ -19,7 +21,5 @@
 #endif
 <!ENTITY % aboutHomeDTD SYSTEM "chrome://browser/locale/aboutHome.dtd">
 %aboutHomeDTD;
-<!ENTITY % syncBrandDTD SYSTEM "chrome://browser/locale/syncBrand.dtd">
-%syncBrandDTD;
 ]>
 

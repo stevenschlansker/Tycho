@@ -43,7 +43,7 @@
       &pairDevice.dialog.description.label;
       <label class="text-link"
              value="&addDevice.showMeHow.label;"
-             href="https://services.mozilla.com/sync/help/add-device"/>
+             href="http://www.palemoon.org/sync/help/easy-setup.shtml"/>
     </description>
     <separator class="groove-thin"/>
     <description>
@@ -172,20 +172,6 @@
             <label class="status" value=" "/>
           </hbox>
         </row>
-#ifdef XP_WIN
-#ifdef MOZ_METRO
-        <row id="metroRow" align="center">
-          <spacer/>
-          <hbox align="center">
-            <checkbox label="&setup.setupMetro.label;"
-                      accesskey="&setup.setupMetro.accesskey;"
-                      control="weavePasswordConfirm"
-                      id="metroSetupCheckbox"
-                      checked="true"/>
-          </hbox>
-        </row>
-#endif
-#endif
         <row id="TOSRow" align="center">
           <spacer/>
           <hbox align="center">
@@ -235,7 +221,7 @@
       &pairDevice.setup.description.label;
       <label class="text-link"
              value="&addDevice.showMeHow.label;"
-             href="https://services.mozilla.com/sync/help/easy-setup"/>
+             href="http://www.palemoon.org/sync/help/easy-setup.shtml"/>
     </description>
     <label value="&addDevice.setup.enterCode.label;"
            control="easySetupPIN1"/>
@@ -354,7 +340,7 @@
       <description>
         &existingRecoveryKey.description;
         <label class="text-link"
-               href="https://services.mozilla.com/sync/help/manual-setup">
+               href="http://www.palemoon.org/sync/help/recoverykey.shtml">
           &addDevice.showMeHow.label;
         </label>
         <spacer id="passphraseHelpSpacer"/>

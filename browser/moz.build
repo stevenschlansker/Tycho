@@ -6,12 +6,9 @@
 
 CONFIGURE_SUBST_FILES += ['installer/Makefile']
 
-SPHINX_TREES['browser'] = 'docs'
-
 DIRS += [
     'base',
     'components',
-    'experiments',
     'fuel',
     'locales',
     'modules',
@@ -19,13 +16,12 @@ DIRS += [
     'extensions',
 ]
 
+if CONFIG['MOZ_DEVTOOLS']:
+    DIRS += ['devtools']
+
 DIRS += [
-    'devtools',
     'app',
 ]
-
-if CONFIG['MOZ_METRO']:
-    DIRS += ['metro']
 
 if CONFIG['MAKENSISU']:
     DIRS += ['installer/windows']

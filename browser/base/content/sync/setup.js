@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -472,13 +471,6 @@ var gSyncSetup = {
           Weave.Service.identity.syncKey = Weave.Utils.generatePassphrase();
           this._handleNoScript(false);
           Weave.Svc.Prefs.set("firstSync", "newAccount");
-#ifdef XP_WIN
-#ifdef MOZ_METRO
-          if (document.getElementById("metroSetupCheckbox").checked) {
-            Services.metro.storeSyncInfo(email, password, Weave.Service.identity.syncKey);
-          }
-#endif
-#endif
           this.wizardFinish();
           return false;
         }

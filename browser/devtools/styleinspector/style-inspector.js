@@ -1,251 +1,238 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const {Cc, Cu, Ci} = require("chrome");
-const {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
-const {Tools} = require("main");
+
+let ToolDefinitions = require("main").Tools;
+
 Cu.import("resource://gre/modules/Services.jsm");
-const {PREF_ORIG_SOURCES} = require("devtools/styleeditor/utils");
 
 loader.lazyGetter(this, "gDevTools", () => Cu.import("resource:///modules/devtools/gDevTools.jsm", {}).gDevTools);
 loader.lazyGetter(this, "RuleView", () => require("devtools/styleinspector/rule-view"));
 loader.lazyGetter(this, "ComputedView", () => require("devtools/styleinspector/computed-view"));
 loader.lazyGetter(this, "_strings", () => Services.strings
-  .createBundle("chrome://global/locale/devtools/styleinspector.properties"));
+  .createBundle("chrome://browser/locale/devtools/styleinspector.properties"));
+loader.lazyGetter(this, "CssLogic", () => require("devtools/styleinspector/css-logic").CssLogic);
 
 // This module doesn't currently export any symbols directly, it only
 // registers inspector tools.
 
-function RuleViewTool(inspector, window, iframe) {
-  this.inspector = inspector;
-  this.doc = window.document;
+function RuleViewTool(aInspector, aWindow, aIFrame)
+{
+  this.inspector = aInspector;
+  this.doc = aWindow.document;
+  this.outerIFrame = aIFrame;
 
-  this.view = new RuleView.CssRuleView(inspector, this.doc);
+  this.view = new RuleView.CssRuleView(this.doc, null);
   this.doc.documentElement.appendChild(this.view.element);
 
-  this.onLinkClicked = this.onLinkClicked.bind(this);
-  this.onSelected = this.onSelected.bind(this);
+  this._changeHandler = function() {
+    this.inspector.markDirty();
+  }.bind(this);
+
+  this.view.element.addEventListener("CssRuleViewChanged", this._changeHandler)
+
+  this._cssLinkHandler = function(aEvent) {
+    let contentDoc = this.inspector.selection.document;
+    let rule = aEvent.detail.rule;
+    let line = rule.ruleLine || 0;
+    let styleSheet = rule.sheet;
+    let styleSheets = contentDoc.styleSheets;
+    let contentSheet = false;
+
+    // The style editor can only display stylesheets coming from content because
+    // chrome stylesheets are not listed in the editor's stylesheet selector.
+    //
+    // If the stylesheet is a content stylesheet we send it to the style
+    // editor else we display it in the view source window.
+    //
+    // Array.prototype.indexOf always returns -1 here so we loop through
+    // the styleSheets object instead.
+    for each (let sheet in styleSheets) {
+      if (sheet == styleSheet) {
+        contentSheet = true;
+        break;
+      }
+    }
+
+    if (contentSheet)  {
+      let target = this.inspector.target;
+
+      if (ToolDefinitions.styleEditor.isTargetSupported(target)) {
+        gDevTools.showToolbox(target, "styleeditor").then(function(toolbox) {
+          toolbox.getCurrentPanel().selectStyleSheet(styleSheet.href, line);
+        });
+      }
+    } else {
+      let href = styleSheet ? styleSheet.href : "";
+      if (rule.elementStyle.element) {
+        href = rule.elementStyle.element.ownerDocument.location.href;
+      }
+      let viewSourceUtils = this.inspector.viewSourceUtils;
+      viewSourceUtils.viewSource(href, null, contentDoc, line);
+    }
+  }.bind(this);
+
+  this.view.element.addEventListener("CssRuleViewCSSLinkClicked",
+                                     this._cssLinkHandler);
+
+  this._onSelect = this.onSelect.bind(this);
+  this.inspector.selection.on("detached", this._onSelect);
+  this.inspector.selection.on("new-node", this._onSelect);
   this.refresh = this.refresh.bind(this);
-  this.clearUserProperties = this.clearUserProperties.bind(this);
-  this.onPropertyChanged = this.onPropertyChanged.bind(this);
-  this.onViewRefreshed = this.onViewRefreshed.bind(this);
-  this.onPanelSelected = this.onPanelSelected.bind(this);
-
-  this.view.element.addEventListener("CssRuleViewChanged", this.onPropertyChanged);
-  this.view.element.addEventListener("CssRuleViewRefreshed", this.onViewRefreshed);
-  this.view.element.addEventListener("CssRuleViewCSSLinkClicked", this.onLinkClicked);
-
-  this.inspector.selection.on("detached", this.onSelected);
-  this.inspector.selection.on("new-node-front", this.onSelected);
   this.inspector.on("layout-change", this.refresh);
+  this.inspector.sidebar.on("ruleview-selected", this.refresh);
   this.inspector.selection.on("pseudoclass", this.refresh);
-  this.inspector.target.on("navigate", this.clearUserProperties);
-  this.inspector.sidebar.on("ruleview-selected", this.onPanelSelected);
+  if (this.inspector.highlighter) {
+    this.inspector.highlighter.on("locked", this._onSelect);
+  }
 
-  this.onSelected();
+  this.onSelect();
 }
 
+exports.RuleViewTool = RuleViewTool;
 
 RuleViewTool.prototype = {
-  isSidebarActive: function() {
-    if (!this.view) {
-      return false;
+  onSelect: function RVT_onSelect(aEvent) {
+    if (!this.inspector.selection.isConnected() ||
+        !this.inspector.selection.isElementNode()) {
+      this.view.highlight(null);
+      return;
     }
+
+    if (!aEvent || aEvent == "new-node") {
+      if (this.inspector.selection.reason == "highlighter") {
+        this.view.highlight(null);
+      } else {
+        this.view.highlight(this.inspector.selection.node);
+      }
+    }
+
+    if (aEvent == "locked") {
+      this.view.highlight(this.inspector.selection.node);
+    }
+  },
+
+  isActive: function RVT_isActive() {
     return this.inspector.sidebar.getCurrentTabID() == "ruleview";
   },
 
-  onSelected: function(event) {
-    // Ignore the event if the view has been destroyed, or if it's inactive.
-    // But only if the current selection isn't null. If it's been set to null,
-    // let the update go through as this is needed to empty the view on navigation.
-    if (!this.view) {
-      return;
-    }
-
-    let isInactive = !this.isSidebarActive() && this.inspector.selection.nodeFront;
-    if (isInactive) {
-      return;
-    }
-
-    this.view.setPageStyle(this.inspector.pageStyle);
-
-    if (!this.inspector.selection.isConnected() ||
-        !this.inspector.selection.isElementNode()) {
-      this.view.selectElement(null);
-      return;
-    }
-
-    if (!event || event == "new-node-front") {
-      let done = this.inspector.updating("rule-view");
-      this.view.selectElement(this.inspector.selection.nodeFront).then(done, done);
+  refresh: function RVT_refresh() {
+    if (this.isActive()) {
+      this.view.nodeChanged();
     }
   },
 
-  refresh: function() {
-    if (this.isSidebarActive()) {
-      this.view.refreshPanel();
-    }
-  },
-
-  clearUserProperties: function() {
-    if (this.view && this.view.store && this.view.store.userProperties) {
-      this.view.store.userProperties.clear();
-    }
-  },
-
-  onPanelSelected: function() {
-    if (this.inspector.selection.nodeFront === this.view.viewedElement) {
-      this.refresh();
-    } else {
-      this.onSelected();
-    }
-  },
-
-  onLinkClicked: function(event) {
-    let rule = event.detail.rule;
-    let sheet = rule.parentStyleSheet;
-
-    // Chrome stylesheets are not listed in the style editor, so show
-    // these sheets in the view source window instead.
-    if (!sheet || sheet.isSystem) {
-      let contentDoc = this.inspector.selection.document;
-      let viewSourceUtils = this.inspector.viewSourceUtils;
-      let href = rule.nodeHref || rule.href;
-      viewSourceUtils.viewSource(href, null, contentDoc, rule.line || 0);
-      return;
-    }
-
-    let location = promise.resolve(rule.location);
-    if (Services.prefs.getBoolPref(PREF_ORIG_SOURCES)) {
-      location = rule.getOriginalLocation();
-    }
-    location.then(({ source, href, line, column }) => {
-      let target = this.inspector.target;
-      if (Tools.styleEditor.isTargetSupported(target)) {
-        gDevTools.showToolbox(target, "styleeditor").then(function(toolbox) {
-          let sheet = source || href;
-          toolbox.getCurrentPanel().selectStyleSheet(sheet, line, column);
-        });
-      }
-      return;
-    })
-  },
-
-  onPropertyChanged: function() {
-    this.inspector.markDirty();
-  },
-
-  onViewRefreshed: function() {
-    this.inspector.emit("rule-view-refreshed");
-  },
-
-  destroy: function() {
+  destroy: function RVT_destroy() {
     this.inspector.off("layout-change", this.refresh);
+    this.inspector.sidebar.off("ruleview-selected", this.refresh);
     this.inspector.selection.off("pseudoclass", this.refresh);
-    this.inspector.selection.off("new-node-front", this.onSelected);
-    this.inspector.target.off("navigate", this.clearUserProperties);
-    this.inspector.sidebar.off("ruleview-selected", this.onPanelSelected);
+    this.inspector.selection.off("new-node", this._onSelect);
+    if (this.inspector.highlighter) {
+      this.inspector.highlighter.off("locked", this._onSelect);
+    }
 
-    this.view.element.removeEventListener("CssRuleViewCSSLinkClicked", this.onLinkClicked);
-    this.view.element.removeEventListener("CssRuleViewChanged", this.onPropertyChanged);
-    this.view.element.removeEventListener("CssRuleViewRefreshed", this.onViewRefreshed);
+    this.view.element.removeEventListener("CssRuleViewCSSLinkClicked",
+      this._cssLinkHandler);
+
+    this.view.element.removeEventListener("CssRuleViewChanged",
+      this._changeHandler);
 
     this.doc.documentElement.removeChild(this.view.element);
 
     this.view.destroy();
 
-    this.view = this.doc = this.inspector = null;
+    delete this.outerIFrame;
+    delete this.view;
+    delete this.doc;
+    delete this.inspector;
   }
-};
-
-function ComputedViewTool(inspector, window, iframe) {
-  this.inspector = inspector;
-  this.doc = window.document;
-
-  this.view = new ComputedView.CssHtmlTree(this, inspector.pageStyle);
-
-  this.onSelected = this.onSelected.bind(this);
-  this.refresh = this.refresh.bind(this);
-  this.onPanelSelected = this.onPanelSelected.bind(this);
-
-  this.inspector.selection.on("detached", this.onSelected);
-  this.inspector.selection.on("new-node-front", this.onSelected);
-  this.inspector.on("layout-change", this.refresh);
-  this.inspector.selection.on("pseudoclass", this.refresh);
-  this.inspector.sidebar.on("computedview-selected", this.onPanelSelected);
-
-  this.view.selectElement(null);
-
-  this.onSelected();
 }
 
+function ComputedViewTool(aInspector, aWindow, aIFrame)
+{
+  this.inspector = aInspector;
+  this.window = aWindow;
+  this.document = aWindow.document;
+  this.outerIFrame = aIFrame;
+  this.cssLogic = new CssLogic();
+  this.view = new ComputedView.CssHtmlTree(this);
+
+  this._onSelect = this.onSelect.bind(this);
+  this.inspector.selection.on("detached", this._onSelect);
+  this.inspector.selection.on("new-node", this._onSelect);
+  if (this.inspector.highlighter) {
+    this.inspector.highlighter.on("locked", this._onSelect);
+  }
+  this.refresh = this.refresh.bind(this);
+  this.inspector.on("layout-change", this.refresh);
+  this.inspector.sidebar.on("computedview-selected", this.refresh);
+  this.inspector.selection.on("pseudoclass", this.refresh);
+
+  this.cssLogic.highlight(null);
+  this.view.highlight(null);
+
+  this.onSelect();
+}
+
+exports.ComputedViewTool = ComputedViewTool;
+
 ComputedViewTool.prototype = {
-  isSidebarActive: function() {
-    if (!this.view) {
+  onSelect: function CVT_onSelect(aEvent)
+  {
+    if (!this.inspector.selection.isConnected() ||
+        !this.inspector.selection.isElementNode()) {
+      this.view.highlight(null);
       return;
     }
+
+    if (!aEvent || aEvent == "new-node") {
+      if (this.inspector.selection.reason == "highlighter") {
+        // FIXME: We should hide view's content
+      } else {
+        this.cssLogic.highlight(this.inspector.selection.node);
+        this.view.highlight(this.inspector.selection.node);
+      }
+    }
+
+    if (aEvent == "locked") {
+      this.cssLogic.highlight(this.inspector.selection.node);
+      this.view.highlight(this.inspector.selection.node);
+    }
+  },
+
+  isActive: function CVT_isActive() {
     return this.inspector.sidebar.getCurrentTabID() == "computedview";
   },
 
-  onSelected: function(event) {
-    // Ignore the event if the view has been destroyed, or if it's inactive.
-    // But only if the current selection isn't null. If it's been set to null,
-    // let the update go through as this is needed to empty the view on navigation.
-    if (!this.view) {
-      return;
-    }
-
-    let isInactive = !this.isSidebarActive() && this.inspector.selection.nodeFront;
-    if (isInactive) {
-      return;
-    }
-
-    this.view.setPageStyle(this.inspector.pageStyle);
-
-    if (!this.inspector.selection.isConnected() ||
-        !this.inspector.selection.isElementNode()) {
-      this.view.selectElement(null);
-      return;
-    }
-
-    if (!event || event == "new-node-front") {
-      let done = this.inspector.updating("computed-view");
-      this.view.selectElement(this.inspector.selection.nodeFront).then(() => {
-        done();
-      });
-    }
-  },
-
-  refresh: function() {
-    if (this.isSidebarActive()) {
+  refresh: function CVT_refresh() {
+    if (this.isActive()) {
+      this.cssLogic.highlight(this.inspector.selection.node);
       this.view.refreshPanel();
     }
   },
 
-  onPanelSelected: function() {
-    if (this.inspector.selection.nodeFront === this.view.viewedElement) {
-      this.refresh();
-    } else {
-      this.onSelected();
-    }
-  },
-
-  destroy: function() {
+  destroy: function CVT_destroy(aContext)
+  {
     this.inspector.off("layout-change", this.refresh);
     this.inspector.sidebar.off("computedview-selected", this.refresh);
     this.inspector.selection.off("pseudoclass", this.refresh);
-    this.inspector.selection.off("new-node-front", this.onSelected);
-    this.inspector.sidebar.off("computedview-selected", this.onPanelSelected);
+    this.inspector.selection.off("new-node", this._onSelect);
+    if (this.inspector.highlighter) {
+      this.inspector.highlighter.off("locked", this._onSelect);
+    }
 
     this.view.destroy();
+    delete this.view;
 
-    this.view = this.cssLogic = this.cssHtmlTree = null;
-    this.doc = this.inspector = null;
+    delete this.outerIFrame;
+    delete this.cssLogic;
+    delete this.cssHtmlTree;
+    delete this.window;
+    delete this.document;
+    delete this.inspector;
   }
-};
-
-exports.RuleViewTool = RuleViewTool;
-exports.ComputedViewTool = ComputedViewTool;
+}

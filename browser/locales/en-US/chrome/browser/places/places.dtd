@@ -52,12 +52,13 @@
 <!ENTITY cmd.open.accesskey              "O">
 <!ENTITY cmd.open_window.label           "Open in a New Window">
 <!ENTITY cmd.open_window.accesskey       "N">
-<!ENTITY cmd.open_private_window.label     "Open in a New Private Window">
-<!ENTITY cmd.open_private_window.accesskey "P">
 <!ENTITY cmd.open_tab.label              "Open in a New Tab">
 <!ENTITY cmd.open_tab.accesskey          "w">
 <!ENTITY cmd.open_all_in_tabs.label      "Open All in Tabs">
 <!ENTITY cmd.open_all_in_tabs.accesskey  "O">
+
+<!ENTITY cmd.openParentFolder.label      "Open Containing Folder">
+<!ENTITY cmd.openParentFolder.accesskey  "F">
 
 <!ENTITY cmd.properties.label      "Properties">
 <!ENTITY cmd.properties.accesskey  "i">
@@ -80,15 +81,17 @@
 <!ENTITY cmd.moveBookmarks.label                  "Move…">
 <!ENTITY cmd.moveBookmarks.accesskey              "M">
 
-<!ENTITY col.name.label          "Name">
-<!ENTITY col.tags.label          "Tags">
-<!ENTITY col.url.label           "Location">
-<!ENTITY col.mostrecentvisit.label "Most Recent Visit">
-<!ENTITY col.visitcount.label    "Visit Count">
-<!ENTITY col.keyword.label       "Keyword">
-<!ENTITY col.description.label   "Description">
-<!ENTITY col.dateadded.label     "Added">
-<!ENTITY col.lastmodified.label  "Last Modified">
+<!ENTITY col.name.label              "Name">
+<!ENTITY col.tags.label              "Tags">
+<!ENTITY col.url.label               "Location">
+<!ENTITY col.lastvisit.label         "Visit Date">
+<!ENTITY col.visitcount.label        "Visit Count">
+<!ENTITY col.keyword.label           "Keyword">
+<!ENTITY col.description.label       "Description">
+<!ENTITY col.dateadded.label         "Added">
+<!ENTITY col.lastmodified.label      "Last Modified">
+<!ENTITY col.parentfolder.label      "Containing Folder">
+<!ENTITY col.parentfolderpath.label  "Containing Folder Path">
 
 <!ENTITY search.label                              "Search:">
 <!ENTITY search.accesskey                          "S">
@@ -104,7 +107,6 @@
 <!ENTITY search.scopeHistory.accesskey             "H">
 <!ENTITY saveSearch.label                          "Save">
 <!ENTITY saveSearch.accesskey                      "S">
-
 
 <!ENTITY cmd.find.key  "f">
 

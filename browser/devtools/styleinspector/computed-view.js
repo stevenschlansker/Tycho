@@ -1,4 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -6,24 +6,18 @@
 
 const {Cc, Ci, Cu} = require("chrome");
 
-const ToolDefinitions = require("main").Tools;
-const {CssLogic} = require("devtools/styleinspector/css-logic");
-const {ELEMENT_STYLE} = require("devtools/server/actors/styles");
-const {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
-const {EventEmitter} = require("devtools/toolkit/event-emitter");
-const {OutputParser} = require("devtools/output-parser");
-const {PrefObserver, PREF_ORIG_SOURCES} = require("devtools/styleeditor/utils");
-const {gDevTools} = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
-const overlays = require("devtools/styleinspector/style-inspector-overlays");
+let ToolDefinitions = require("main").Tools;
+let {CssLogic} = require("devtools/styleinspector/css-logic");
 
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/PluralForm.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/devtools/Templater.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-                                  "resource://gre/modules/PluralForm.jsm");
+Cu.import("resource:///modules/devtools/gDevTools.jsm");
 
 const FILTER_CHANGED_TIMEOUT = 300;
+
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
@@ -96,7 +90,6 @@ UpdateProcess.prototype = {
         this.onDone();
         return;
       }
-      console.error(e);
       throw e;
     }
   },
@@ -122,73 +115,38 @@ UpdateProcess.prototype = {
  * will generally only be one).
  *
  * @params {StyleInspector} aStyleInspector The owner of this CssHtmlTree
- * @param {PageStyleFront} aPageStyle
- *        Front for the page style actor that will be providing
- *        the style information.
- *
  * @constructor
  */
-function CssHtmlTree(aStyleInspector, aPageStyle)
+function CssHtmlTree(aStyleInspector)
 {
-  this.styleWindow = aStyleInspector.doc.defaultView;
-  this.styleDocument = aStyleInspector.doc;
+  this.styleWindow = aStyleInspector.window;
+  this.styleDocument = aStyleInspector.window.document;
   this.styleInspector = aStyleInspector;
-  this.inspector = this.styleInspector.inspector;
-  this.pageStyle = aPageStyle;
+  this.cssLogic = aStyleInspector.cssLogic;
   this.propertyViews = [];
-
-  this._outputParser = new OutputParser();
 
   let chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"].
     getService(Ci.nsIXULChromeRegistry);
   this.getRTLAttr = chromeReg.isLocaleRTL("global") ? "rtl" : "ltr";
 
   // Create bound methods.
-  this.focusWindow = this.focusWindow.bind(this);
-  this._onContextMenu = this._onContextMenu.bind(this);
-  this._contextMenuUpdate = this._contextMenuUpdate.bind(this);
-  this._onSelectAll = this._onSelectAll.bind(this);
-  this._onClick = this._onClick.bind(this);
-  this._onCopy = this._onCopy.bind(this);
-  this._onCopyColor = this._onCopyColor.bind(this);
+  this.siFocusWindow = this.focusWindow.bind(this);
+  this.siBoundCopy = this.computedViewCopy.bind(this);
 
-  this.styleDocument.addEventListener("copy", this._onCopy);
-  this.styleDocument.addEventListener("mousedown", this.focusWindow);
-  this.styleDocument.addEventListener("contextmenu", this._onContextMenu);
+  this.styleDocument.addEventListener("copy", this.siBoundCopy);
+  this.styleDocument.addEventListener("mousedown", this.siFocusWindow);
 
   // Nodes used in templating
   this.root = this.styleDocument.getElementById("root");
   this.templateRoot = this.styleDocument.getElementById("templateRoot");
-  this.element = this.styleDocument.getElementById("propertyContainer");
-
-  // Listen for click events
-  this.element.addEventListener("click", this._onClick, false);
+  this.propertyContainer = this.styleDocument.getElementById("propertyContainer");
 
   // No results text.
   this.noResults = this.styleDocument.getElementById("noResults");
 
-  // Refresh panel when color unit changed.
-  this._handlePrefChange = this._handlePrefChange.bind(this);
-  gDevTools.on("pref-changed", this._handlePrefChange);
-
-  // Refresh panel when pref for showing original sources changes
-  this._updateSourceLinks = this._updateSourceLinks.bind(this);
-  this._prefObserver = new PrefObserver("devtools.");
-  this._prefObserver.on(PREF_ORIG_SOURCES, this._updateSourceLinks);
-
-  CssHtmlTree.processTemplate(this.templateRoot, this.root, this);
-
   // The element that we're inspecting, and the document that it comes from.
   this.viewedElement = null;
-
-  this._buildContextMenu();
   this.createStyleViews();
-
-  // Add the tooltips and highlightersoverlay
-  this.tooltips = new overlays.TooltipsOverlay(this);
-  this.tooltips.addToView();
-  this.highlighters = new overlays.HighlightersOverlay(this);
-  this.highlighters.addToView();
 }
 
 /**
@@ -238,7 +196,7 @@ CssHtmlTree.processTemplate = function CssHtmlTree_processTemplate(aTemplate,
 };
 
 XPCOMUtils.defineLazyGetter(CssHtmlTree, "_strings", function() Services.strings
-        .createBundle("chrome://global/locale/devtools/styleinspector.properties"));
+        .createBundle("chrome://browser/locale/devtools/styleinspector.properties"));
 
 XPCOMUtils.defineLazyGetter(this, "clipboardHelper", function() {
   return Cc["@mozilla.org/widget/clipboardhelper;1"].
@@ -248,6 +206,8 @@ XPCOMUtils.defineLazyGetter(this, "clipboardHelper", function() {
 CssHtmlTree.prototype = {
   // Cache the list of properties that match the selected element.
   _matchedProperties: null,
+
+  htmlComplete: false,
 
   // Used for cancelling timeouts in the style filter.
   _filterChangedTimeout: null,
@@ -267,180 +227,74 @@ CssHtmlTree.prototype = {
   // Number of visible properties
   numVisibleProperties: 0,
 
-  setPageStyle: function(pageStyle) {
-    this.pageStyle = pageStyle;
-  },
-
   get includeBrowserStyles()
   {
     return this.includeBrowserStylesCheckbox.checked;
   },
 
-  _handlePrefChange: function(event, data) {
-    if (this._computed && (data.pref == "devtools.defaultColorUnit" ||
-        data.pref == PREF_ORIG_SOURCES)) {
-      this.refreshPanel();
-    }
-  },
-
   /**
-   * Update the view with a new selected element.
-   * The CssHtmlTree panel will show the style information for the given element.
-   * @param {NodeFront} aElement The highlighted node to get styles for.
-   * @returns a promise that will be resolved when highlighting is complete.
+   * Update the highlighted element. The CssHtmlTree panel will show the style
+   * information for the given element.
+   * @param {nsIDOMElement} aElement The highlighted node to get styles for.
    */
-  selectElement: function(aElement) {
-    if (!aElement) {
-      this.viewedElement = null;
-      this.noResults.hidden = false;
+  highlight: function CssHtmlTree_highlight(aElement)
+  {
+    this.viewedElement = aElement;
+    this._matchedProperties = null;
 
+    if (!aElement) {
       if (this._refreshProcess) {
         this._refreshProcess.cancel();
       }
-      // Hiding all properties
-      for (let propView of this.propertyViews) {
-        propView.refresh();
-      }
-      return promise.resolve(undefined);
+      return;
     }
 
-    if (aElement === this.viewedElement) {
-      return promise.resolve(undefined);
-    }
-
-    this.viewedElement = aElement;
-    this.refreshSourceFilter();
-
-    return this.refreshPanel();
-  },
-
-  /**
-   * Get the type of a given node in the computed-view
-   * @param {DOMNode} node The node which we want information about
-   * @return {Object} The type information object contains the following props:
-   * - type {String} One of the VIEW_NODE_XXX_TYPE const in
-   *   style-inspector-overlays
-   * - value {Object} Depends on the type of the node
-   * returns null of the node isn't anything we care about
-   */
-  getNodeInfo: function(node) {
-    if (!node) {
-      return null;
-    }
-
-    let classes = node.classList;
-
-    // Check if the node isn't a selector first since this doesn't require
-    // walking the DOM
-    if (classes.contains("matched") ||
-        classes.contains("bestmatch") ||
-        classes.contains("parentmatch")) {
-      let selectorText = "";
-      for (let child of node.childNodes) {
-        if (child.nodeType === node.TEXT_NODE) {
-          selectorText += child.textContent;
-        }
-      }
-      return {
-        type: overlays.VIEW_NODE_SELECTOR_TYPE,
-        value: selectorText.trim()
-      }
-    }
-
-    // Walk up the nodes to find out where node is
-    let propertyView;
-    let propertyContent;
-    let parent = node;
-    while (parent.parentNode) {
-      if (parent.classList.contains("property-view")) {
-        propertyView = parent;
-        break;
-      }
-      if (parent.classList.contains("property-content")) {
-        propertyContent = parent;
-        break;
-      }
-      parent = parent.parentNode;
-    }
-    if (!propertyView && !propertyContent) {
-      return null;
-    }
-
-    let value, type;
-
-    // Get the property and value for a node that's a property name or value
-    let isHref = classes.contains("theme-link") && !classes.contains("link");
-    if (propertyView && (classes.contains("property-name") ||
-                         classes.contains("property-value") ||
-                         isHref)) {
-      value = {
-        property: parent.querySelector(".property-name").textContent,
-        value: parent.querySelector(".property-value").textContent
-      };
-    }
-    if (propertyContent && (classes.contains("other-property-value") ||
-                            isHref)) {
-      let view = propertyContent.previousSibling;
-      value = {
-        property: view.querySelector(".property-name").textContent,
-        value: node.textContent
-      };
-    }
-
-    // Get the type
-    if (classes.contains("property-name")) {
-      type = overlays.VIEW_NODE_PROPERTY_TYPE;
-    } else if (classes.contains("property-value") ||
-               classes.contains("other-property-value")) {
-      type = overlays.VIEW_NODE_VALUE_TYPE;
-    } else if (isHref) {
-      type = overlays.VIEW_NODE_IMAGE_URL_TYPE;
-      value.url = node.href;
+    if (this.htmlComplete) {
+      this.refreshSourceFilter();
+      this.refreshPanel();
     } else {
-      return null;
-    }
-
-    return {type, value};
-  },
-
-  _createPropertyViews: function()
-  {
-    if (this._createViewsPromise) {
-      return this._createViewsPromise;
-    }
-
-    let deferred = promise.defer();
-    this._createViewsPromise = deferred.promise;
-
-    this.refreshSourceFilter();
-    this.numVisibleProperties = 0;
-    let fragment = this.styleDocument.createDocumentFragment();
-
-    this._createViewsProcess = new UpdateProcess(this.styleWindow, CssHtmlTree.propertyNames, {
-      onItem: (aPropertyName) => {
-        // Per-item callback.
-        let propView = new PropertyView(this, aPropertyName);
-        fragment.appendChild(propView.buildMain());
-        fragment.appendChild(propView.buildSelectorContainer());
-
-        if (propView.visible) {
-          this.numVisibleProperties++;
-        }
-        this.propertyViews.push(propView);
-      },
-      onCancel: () => {
-        deferred.reject("_createPropertyViews cancelled");
-      },
-      onDone: () => {
-        // Completed callback.
-        this.element.appendChild(fragment);
-        this.noResults.hidden = this.numVisibleProperties > 0;
-        deferred.resolve(undefined);
+      if (this._refreshProcess) {
+        this._refreshProcess.cancel();
       }
-    });
 
-    this._createViewsProcess.schedule();
-    return deferred.promise;
+      CssHtmlTree.processTemplate(this.templateRoot, this.root, this);
+
+      // Refresh source filter ... this must be done after templateRoot has been
+      // processed.
+      this.refreshSourceFilter();
+      this.numVisibleProperties = 0;
+      let fragment = this.styleDocument.createDocumentFragment();
+      this._refreshProcess = new UpdateProcess(this.styleWindow, CssHtmlTree.propertyNames, {
+        onItem: function(aPropertyName) {
+          // Per-item callback.
+          let propView = new PropertyView(this, aPropertyName);
+          fragment.appendChild(propView.buildMain());
+          fragment.appendChild(propView.buildSelectorContainer());
+
+          if (propView.visible) {
+            this.numVisibleProperties++;
+          }
+          propView.refreshMatchedSelectors();
+          this.propertyViews.push(propView);
+        }.bind(this),
+        onDone: function() {
+          // Completed callback.
+          this.htmlComplete = true;
+          this.propertyContainer.appendChild(fragment);
+          this.noResults.hidden = this.numVisibleProperties > 0;
+          this._refreshProcess = null;
+
+          // If a refresh was scheduled during the building, complete it.
+          if (this._needsRefresh) {
+            delete this._needsRefresh;
+            this.refreshPanel();
+          } else {
+            Services.obs.notifyObservers(null, "StyleInspector-populated", null);
+          }
+        }.bind(this)});
+
+      this._refreshProcess.schedule();
+    }
   },
 
   /**
@@ -448,61 +302,39 @@ CssHtmlTree.prototype = {
    */
   refreshPanel: function CssHtmlTree_refreshPanel()
   {
-    if (!this.viewedElement) {
-      return promise.resolve();
+    // If we're still in the process of creating the initial layout,
+    // leave it alone.
+    if (!this.htmlComplete) {
+      if (this._refreshProcess) {
+        this._needsRefresh = true;
+      }
+      return;
     }
 
-    // Capture the current viewed element to return from the promise handler
-    // early if it changed
-    let viewedElement = this.viewedElement;
+    if (this._refreshProcess) {
+      this._refreshProcess.cancel();
+    }
 
-    return promise.all([
-      this._createPropertyViews(),
-      this.pageStyle.getComputed(this.viewedElement, {
-        filter: this._sourceFilter,
-        onlyMatched: !this.includeBrowserStyles,
-        markMatched: true
-      })
-    ]).then(([createViews, computed]) => {
-      if (viewedElement !== this.viewedElement) {
-        return;
-      }
+    this.noResults.hidden = true;
 
-      this._matchedProperties = new Set;
-      for (let name in computed) {
-        if (computed[name].matched) {
-          this._matchedProperties.add(name);
-        }
-      }
-      this._computed = computed;
+    // Reset visible property count
+    this.numVisibleProperties = 0;
 
-      if (this._refreshProcess) {
-        this._refreshProcess.cancel();
-      }
+    // Reset zebra striping.
+    this._darkStripe = true;
 
-      this.noResults.hidden = true;
-
-      // Reset visible property count
-      this.numVisibleProperties = 0;
-
-      // Reset zebra striping.
-      this._darkStripe = true;
-
-      let deferred = promise.defer();
-      this._refreshProcess = new UpdateProcess(this.styleWindow, this.propertyViews, {
-        onItem: (aPropView) => {
-          aPropView.refresh();
-        },
-        onDone: () => {
-          this._refreshProcess = null;
-          this.noResults.hidden = this.numVisibleProperties > 0;
-          this.inspector.emit("computed-view-refreshed");
-          deferred.resolve(undefined);
-        }
-      });
-      this._refreshProcess.schedule();
-      return deferred.promise;
-    }).then(null, (err) => console.error(err));
+    let display = this.propertyContainer.style.display;
+    this._refreshProcess = new UpdateProcess(this.styleWindow, this.propertyViews, {
+      onItem: function(aPropView) {
+        aPropView.refresh();
+      }.bind(this),
+      onDone: function() {
+        this._refreshProcess = null;
+        this.noResults.hidden = this.numVisibleProperties > 0;
+        Services.obs.notifyObservers(null, "StyleInspector-populated", null);
+      }.bind(this)
+    });
+    this._refreshProcess.schedule();
   },
 
   /**
@@ -518,10 +350,10 @@ CssHtmlTree.prototype = {
       win.clearTimeout(this._filterChangedTimeout);
     }
 
-    this._filterChangedTimeout = win.setTimeout(() => {
+    this._filterChangedTimeout = win.setTimeout(function() {
       this.refreshPanel();
       this._filterChangeTimeout = null;
-    }, FILTER_CHANGED_TIMEOUT);
+    }.bind(this), FILTER_CHANGED_TIMEOUT);
   },
 
   /**
@@ -545,17 +377,9 @@ CssHtmlTree.prototype = {
   refreshSourceFilter: function CssHtmlTree_setSourceFilter()
   {
     this._matchedProperties = null;
-    this._sourceFilter = this.includeBrowserStyles ?
+    this.cssLogic.sourceFilter = this.includeBrowserStyles ?
                                  CssLogic.FILTER.UA :
-                                 CssLogic.FILTER.USER;
-  },
-
-  _updateSourceLinks: function CssHtmlTree__updateSourceLinks()
-  {
-    for (let propView of this.propertyViews) {
-      propView.updateSourceLinks();
-    }
-    this.inspector.emit("computed-view-sourcelinks-updated");
+                                 CssLogic.FILTER.ALL;
   },
 
   /**
@@ -575,10 +399,7 @@ CssHtmlTree.prototype = {
     let mozProps = [];
     for (let i = 0, numStyles = styles.length; i < numStyles; i++) {
       let prop = styles.item(i);
-      if (prop.startsWith("--")) {
-        // Skip any CSS variables used inside of browser CSS files
-        continue;
-      } else if (prop.startsWith("-")) {
+      if (prop.charAt(0) == "-") {
         mozProps.push(prop);
       } else {
         CssHtmlTree.propertyNames.push(prop);
@@ -588,25 +409,21 @@ CssHtmlTree.prototype = {
     CssHtmlTree.propertyNames.sort();
     CssHtmlTree.propertyNames.push.apply(CssHtmlTree.propertyNames,
       mozProps.sort());
-
-    this._createPropertyViews().then(null, e => {
-      if (!this.styleInspector) {
-        console.warn("The creation of property views was cancelled because the " +
-          "computed-view was destroyed before it was done creating views");
-      } else {
-        console.error(e);
-      }
-    });
   },
 
   /**
-   * Get a set of properties that have matched selectors.
+   * Get a list of properties that have matched selectors.
    *
-   * @return {Set} If a property name is in the set, it has matching selectors.
+   * @return {object} the object maps property names (keys) to booleans (values)
+   * that tell if the given property has matched selectors or not.
    */
   get matchedProperties()
   {
-    return this._matchedProperties || new Set;
+    if (!this._matchedProperties) {
+      this._matchedProperties =
+        this.cssLogic.hasMatchedSelectors(CssHtmlTree.propertyNames);
+    }
+    return this._matchedProperties;
   },
 
   /**
@@ -614,202 +431,33 @@ CssHtmlTree.prototype = {
    *
    * @param aEvent The event object
    */
-  focusWindow: function(aEvent)
+  focusWindow: function si_focusWindow(aEvent)
   {
     let win = this.styleDocument.defaultView;
     win.focus();
   },
 
   /**
-   * Create a context menu.
-   */
-  _buildContextMenu: function()
-  {
-    let doc = this.styleDocument.defaultView.parent.document;
-
-    this._contextmenu = this.styleDocument.createElementNS(XUL_NS, "menupopup");
-    this._contextmenu.addEventListener("popupshowing", this._contextMenuUpdate);
-    this._contextmenu.id = "computed-view-context-menu";
-
-    // Select All
-    this.menuitemSelectAll = createMenuItem(this._contextmenu, {
-      label: "computedView.contextmenu.selectAll",
-      accesskey: "computedView.contextmenu.selectAll.accessKey",
-      command: this._onSelectAll
-    });
-
-    // Copy
-    this.menuitemCopy = createMenuItem(this._contextmenu, {
-      label: "computedView.contextmenu.copy",
-      accesskey: "computedView.contextmenu.copy.accessKey",
-      command: this._onCopy
-    });
-
-    // Copy color
-    this.menuitemCopyColor = createMenuItem(this._contextmenu, {
-      label: "ruleView.contextmenu.copyColor",
-      accesskey: "ruleView.contextmenu.copyColor.accessKey",
-      command: this._onCopyColor
-    });
-
-    // Show Original Sources
-    this.menuitemSources= createMenuItem(this._contextmenu, {
-      label: "ruleView.contextmenu.showOrigSources",
-      accesskey: "ruleView.contextmenu.showOrigSources.accessKey",
-      command: this._onToggleOrigSources,
-      type: "checkbox"
-    });
-
-    let popupset = doc.documentElement.querySelector("popupset");
-    if (!popupset) {
-      popupset = doc.createElementNS(XUL_NS, "popupset");
-      doc.documentElement.appendChild(popupset);
-    }
-    popupset.appendChild(this._contextmenu);
-  },
-
-  /**
-   * Update the context menu. This means enabling or disabling menuitems as
-   * appropriate.
-   */
-  _contextMenuUpdate: function()
-  {
-    let win = this.styleDocument.defaultView;
-    let disable = win.getSelection().isCollapsed;
-    this.menuitemCopy.disabled = disable;
-
-    let showOrig = Services.prefs.getBoolPref(PREF_ORIG_SOURCES);
-    this.menuitemSources.setAttribute("checked", showOrig);
-
-    this.menuitemCopyColor.hidden = !this._isColorPopup();
-  },
-
-  /**
-   * A helper that determines if the popup was opened with a click to a color
-   * value and saves the color to this._colorToCopy.
-   *
-   * @return {Boolean}
-   *         true if click on color opened the popup, false otherwise.
-   */
-  _isColorPopup: function () {
-    this._colorToCopy = "";
-
-    let trigger = this.popupNode;
-    if (!trigger) {
-      return false;
-    }
-
-    let container = (trigger.nodeType == trigger.TEXT_NODE) ?
-                     trigger.parentElement : trigger;
-
-    let isColorNode = el => el.dataset && "color" in el.dataset;
-
-    while (!isColorNode(container)) {
-      container = container.parentNode;
-      if (!container) {
-        return false;
-      }
-    }
-
-    this._colorToCopy = container.dataset["color"];
-    return true;
-  },
-
-  /**
-   * Context menu handler.
-   */
-  _onContextMenu: function(event) {
-    try {
-      this.popupNode = event.explicitOriginalTarget;
-      this.styleDocument.defaultView.focus();
-      this._contextmenu.openPopupAtScreen(event.screenX, event.screenY, true);
-    } catch(e) {
-      console.error(e);
-    }
-  },
-
-  /**
-   * Select all text.
-   */
-  _onSelectAll: function()
-  {
-    try {
-      let win = this.styleDocument.defaultView;
-      let selection = win.getSelection();
-
-      selection.selectAllChildren(this.styleDocument.documentElement);
-    } catch(e) {
-      console.error(e);
-    }
-  },
-
-  _onClick: function(event) {
-    let target = event.target;
-
-    if (target.nodeName === "a") {
-      event.stopPropagation();
-      event.preventDefault();
-      let browserWin = this.inspector.target.tab.ownerDocument.defaultView;
-      browserWin.openUILinkIn(target.href, "tab");
-    }
-  },
-
-  _onCopyColor: function() {
-    clipboardHelper.copyString(this._colorToCopy, this.styleDocument);
-  },
-
-  /**
    * Copy selected text.
    *
-   * @param event The event object
+   * @param aEvent The event object
    */
-  _onCopy: function(event)
+  computedViewCopy: function si_computedViewCopy(aEvent)
   {
-    try {
-      let win = this.styleDocument.defaultView;
-      let text = win.getSelection().toString().trim();
+    let win = this.styleDocument.defaultView;
+    let text = win.getSelection().toString();
 
-      // Tidy up block headings by moving CSS property names and their values onto
-      // the same line and inserting a colon between them.
-      let textArray = text.split(/[\r\n]+/);
-      let result = "";
+    // Tidy up block headings by moving CSS property names and their values onto
+    // the same line and inserting a colon between them.
+    text = text.replace(/(.+)\r\n(.+)/g, "$1: $2;");
+    text = text.replace(/(.+)\n(.+)/g, "$1: $2;");
 
-      // Parse text array to output string.
-      if (textArray.length > 1) {
-        for (let prop of textArray) {
-          if (CssHtmlTree.propertyNames.indexOf(prop) !== -1) {
-            // Property name
-            result += prop;
-          } else {
-            // Property value
-            result += ": " + prop;
-            if (result.length > 0) {
-              result += ";\n";
-            }
-          }
-        }
-      } else {
-        // Short text fragment.
-        result = textArray[0];
-      }
+    let outerDoc = this.styleInspector.outerIFrame.ownerDocument;
+    clipboardHelper.copyString(text, outerDoc);
 
-      clipboardHelper.copyString(result, this.styleDocument);
-
-      if (event) {
-        event.preventDefault();
-      }
-    } catch(e) {
-      console.error(e);
+    if (aEvent) {
+      aEvent.preventDefault();
     }
-  },
-
-  /**
-   *  Toggle the original sources pref.
-   */
-  _onToggleOrigSources: function()
-  {
-    let isEnabled = Services.prefs.getBoolPref(PREF_ORIG_SOURCES);
-    Services.prefs.setBoolPref(PREF_ORIG_SOURCES, !isEnabled);
   },
 
   /**
@@ -817,103 +465,68 @@ CssHtmlTree.prototype = {
    */
   destroy: function CssHtmlTree_destroy()
   {
-    this.viewedElement = null;
-    this._outputParser = null;
+    delete this.viewedElement;
 
     // Remove event listeners
-    this.includeBrowserStylesCheckbox.removeEventListener("command",
-      this.includeBrowserStylesChanged);
-    this.searchField.removeEventListener("command", this.filterChanged);
-    gDevTools.off("pref-changed", this._handlePrefChange);
-
-    this._prefObserver.off(PREF_ORIG_SOURCES, this._updateSourceLinks);
-    this._prefObserver.destroy();
-
-    // Cancel tree construction
-    if (this._createViewsProcess) {
-      this._createViewsProcess.cancel();
+    if (this.includeBrowserStylesCheckbox) {
+      this.includeBrowserStylesCheckbox.removeEventListener("command",
+        this.includeBrowserStylesChanged);
     }
+    if (this.searchField) {
+      this.searchField.removeEventListener("command", this.filterChanged);
+    }
+    
+    // Cancel tree construction
     if (this._refreshProcess) {
       this._refreshProcess.cancel();
     }
 
-    this.element.removeEventListener("click", this._onClick, false);
-
     // Remove context menu
-    if (this._contextmenu) {
-      // Destroy the Select All menuitem.
-      this.menuitemCopy.removeEventListener("command", this._onCopy);
-      this.menuitemCopy = null;
+    let outerDoc = this.styleInspector.outerIFrame.ownerDocument;
+    let menu = outerDoc.querySelector("#computed-view-context-menu");
+    if (menu) {
+      // Copy selected
+      let menuitem = outerDoc.querySelector("#computed-view-copy");
+      menuitem.removeEventListener("command", this.siBoundCopy);
 
-      // Destroy the Copy menuitem.
-      this.menuitemSelectAll.removeEventListener("command", this._onSelectAll);
-      this.menuitemSelectAll = null;
+      // Copy property
+      menuitem = outerDoc.querySelector("#computed-view-copy-declaration");
+      menuitem.removeEventListener("command", this.siBoundCopyDeclaration);
 
-      // Destroy Copy Color menuitem.
-      this.menuitemCopyColor.removeEventListener("command", this._onCopyColor);
-      this.menuitemCopyColor = null;
+      // Copy property name
+      menuitem = outerDoc.querySelector("#computed-view-copy-property");
+      menuitem.removeEventListener("command", this.siBoundCopyProperty);
 
-      // Destroy the context menu.
-      this._contextmenu.removeEventListener("popupshowing", this._contextMenuUpdate);
-      this._contextmenu.parentNode.removeChild(this._contextmenu);
-      this._contextmenu = null;
+      // Copy property value
+      menuitem = outerDoc.querySelector("#computed-view-copy-property-value");
+      menuitem.removeEventListener("command", this.siBoundCopyPropertyValue);
+
+      menu.removeEventListener("popupshowing", this.siBoundMenuUpdate);
+      menu.parentNode.removeChild(menu);
     }
-
-    this.popupNode = null;
-
-    this.tooltips.destroy();
-    this.highlighters.destroy();
 
     // Remove bound listeners
-    this.styleDocument.removeEventListener("contextmenu", this._onContextMenu);
-    this.styleDocument.removeEventListener("copy", this._onCopy);
-    this.styleDocument.removeEventListener("mousedown", this.focusWindow);
-
+    if (this.styleDocument) {
+      this.styleDocument.removeEventListener("copy", this.siBoundCopy);
+      this.styleDocument.removeEventListener("mousedown", this.siFocusWindow);
+    }
+    
     // Nodes used in templating
-    this.root = null;
-    this.element = null;
-    this.panel = null;
+    delete this.root;
+    delete this.propertyContainer;
+    delete this.panel;
 
     // The document in which we display the results (csshtmltree.xul).
-    this.styleDocument = null;
-
-    for (let propView of this.propertyViews)  {
-      propView.destroy();
-    }
+    delete this.styleDocument;
 
     // The element that we're inspecting, and the document that it comes from.
-    this.propertyViews = null;
-    this.styleWindow = null;
-    this.styleDocument = null;
-    this.styleInspector = null;
-  }
+    delete this.propertyViews;
+    delete this.styleWindow;
+    delete this.styleDocument;
+    delete this.cssLogic;
+    delete this.styleInspector;
+  },
 };
-
-function PropertyInfo(aTree, aName) {
-  this.tree = aTree;
-  this.name = aName;
-}
-PropertyInfo.prototype = {
-  get value() {
-    if (this.tree._computed) {
-      let value = this.tree._computed[this.name].value;
-      return value;
-    }
-  }
-};
-
-function createMenuItem(aMenu, aAttributes)
-{
-  let item = aMenu.ownerDocument.createElementNS(XUL_NS, "menuitem");
-
-  item.setAttribute("label", CssHtmlTree.l10n(aAttributes.label));
-  item.setAttribute("accesskey", CssHtmlTree.l10n(aAttributes.accesskey));
-  item.addEventListener("command", aAttributes.command);
-
-  aMenu.appendChild(item);
-
-  return item;
-}
 
 /**
  * A container to give easy access to property data from the template engine.
@@ -932,7 +545,6 @@ function PropertyView(aTree, aName)
   this.link = "https://developer.mozilla.org/CSS/" + aName;
 
   this.templateMatchedSelectors = aTree.styleDocument.getElementById("templateMatchedSelectors");
-  this._propertyInfo = new PropertyInfo(aTree, aName);
 }
 
 PropertyView.prototype = {
@@ -979,7 +591,7 @@ PropertyView.prototype = {
    */
   get propertyInfo()
   {
-    return this._propertyInfo;
+    return this.tree.cssLogic.getPropertyInfo(this.name);
   },
 
   /**
@@ -987,7 +599,7 @@ PropertyView.prototype = {
    */
   get hasMatchedSelectors()
   {
-    return this.tree.matchedProperties.has(this.name);
+    return this.name in this.tree.matchedProperties;
   },
 
   /**
@@ -995,10 +607,6 @@ PropertyView.prototype = {
    */
   get visible()
   {
-    if (!this.tree.viewedElement) {
-      return false;
-    }
-
     if (!this.tree.includeBrowserStyles && !this.hasMatchedSelectors) {
       return false;
     }
@@ -1014,13 +622,16 @@ PropertyView.prototype = {
 
   /**
    * Returns the className that should be assigned to the propertyView.
+   *
    * @return string
    */
   get propertyHeaderClassName()
   {
     if (this.visible) {
-      let isDark = this.tree._darkStripe = !this.tree._darkStripe;
-      return isDark ? "property-view row-striped" : "property-view";
+      this.tree._darkStripe = !this.tree._darkStripe;
+      let darkValue = this.tree._darkStripe ?
+                      "property-view theme-bg-darker" : "property-view";
+      return darkValue;
     }
     return "property-view-hidden";
   },
@@ -1033,70 +644,49 @@ PropertyView.prototype = {
   get propertyContentClassName()
   {
     if (this.visible) {
-      let isDark = this.tree._darkStripe;
-      return isDark ? "property-content row-striped" : "property-content";
+      let darkValue = this.tree._darkStripe ?
+                      "property-content theme-bg-darker" : "property-content";
+      return darkValue;
     }
     return "property-content-hidden";
   },
 
-  /**
-   * Build the markup for on computed style
-   * @return Element
-   */
   buildMain: function PropertyView_buildMain()
   {
     let doc = this.tree.styleDocument;
-
-    // Build the container element
-    this.onMatchedToggle = this.onMatchedToggle.bind(this);
     this.element = doc.createElementNS(HTML_NS, "div");
     this.element.setAttribute("class", this.propertyHeaderClassName);
-    this.element.addEventListener("dblclick", this.onMatchedToggle, false);
 
-    // Make it keyboard navigable
-    this.element.setAttribute("tabindex", "0");
-    this.onKeyDown = (aEvent) => {
+    this.matchedExpander = doc.createElementNS(HTML_NS, "div");
+    this.matchedExpander.className = "expander theme-twisty";
+    this.matchedExpander.setAttribute("tabindex", "0");
+    this.matchedExpander.addEventListener("click",
+      this.matchedExpanderClick.bind(this), false);
+    this.matchedExpander.addEventListener("keydown", function(aEvent) {
       let keyEvent = Ci.nsIDOMKeyEvent;
       if (aEvent.keyCode == keyEvent.DOM_VK_F1) {
         this.mdnLinkClick();
       }
       if (aEvent.keyCode == keyEvent.DOM_VK_RETURN ||
         aEvent.keyCode == keyEvent.DOM_VK_SPACE) {
-        this.onMatchedToggle(aEvent);
+        this.matchedExpanderClick(aEvent);
       }
-    };
-    this.element.addEventListener("keydown", this.onKeyDown, false);
-
-    // Build the twisty expand/collapse
-    this.matchedExpander = doc.createElementNS(HTML_NS, "div");
-    this.matchedExpander.className = "expander theme-twisty";
-    this.matchedExpander.addEventListener("click", this.onMatchedToggle, false);
+    }.bind(this), false);
     this.element.appendChild(this.matchedExpander);
 
-    this.focusElement = () => this.element.focus();
-
-    // Build the style name element
     this.nameNode = doc.createElementNS(HTML_NS, "div");
-    this.nameNode.setAttribute("class", "property-name theme-fg-color5");
-    // Reset its tabindex attribute otherwise, if an ellipsis is applied
-    // it will be reachable via TABing
-    this.nameNode.setAttribute("tabindex", "");
-    this.nameNode.textContent = this.nameNode.title = this.name;
-    // Make it hand over the focus to the container
-    this.onFocus = () => this.element.focus();
-    this.nameNode.addEventListener("click", this.onFocus, false);
     this.element.appendChild(this.nameNode);
+    this.nameNode.setAttribute("class", "property-name theme-fg-color5");
+    this.nameNode.textContent = this.nameNode.title = this.name;
+    this.nameNode.addEventListener("click", function(aEvent) {
+      this.matchedExpander.focus();
+    }.bind(this), false);
 
-    // Build the style value element
     this.valueNode = doc.createElementNS(HTML_NS, "div");
-    this.valueNode.setAttribute("class", "property-value theme-fg-color1");
-    // Reset its tabindex attribute otherwise, if an ellipsis is applied
-    // it will be reachable via TABing
-    this.valueNode.setAttribute("tabindex", "");
-    this.valueNode.setAttribute("dir", "ltr");
-    // Make it hand over the focus to the container
-    this.valueNode.addEventListener("click", this.onFocus, false);
     this.element.appendChild(this.valueNode);
+    this.valueNode.setAttribute("class", "property-value theme-fg-color1");
+    this.valueNode.setAttribute("dir", "ltr");
+    this.valueNode.textContent = this.valueNode.title = this.value;
 
     return this.element;
   },
@@ -1135,18 +725,7 @@ PropertyView.prototype = {
     }
 
     this.tree.numVisibleProperties++;
-
-    let outputParser = this.tree._outputParser;
-    let frag = outputParser.parseCssProperty(this.propertyInfo.name,
-      this.propertyInfo.value,
-      {
-        colorSwatchClass: "computedview-colorswatch",
-        urlClass: "theme-link"
-        // No need to use baseURI here as computed URIs are never relative.
-      });
-    this.valueNode.innerHTML = "";
-    this.valueNode.appendChild(frag);
-
+    this.valueNode.textContent = this.valueNode.title = this.propertyInfo.value;
     this.refreshMatchedSelectors();
   },
 
@@ -1165,28 +744,13 @@ PropertyView.prototype = {
     }
 
     if (this.matchedExpanded && hasMatchedSelectors) {
-      return this.tree.pageStyle.getMatchedSelectors(this.tree.viewedElement, this.name).then(matched => {
-        if (!this.matchedExpanded) {
-          return;
-        }
-
-        this._matchedSelectorResponse = matched;
-        CssHtmlTree.processTemplate(this.templateMatchedSelectors,
-          this.matchedSelectorsContainer, this);
-        this.matchedExpander.setAttribute("open", "");
-        this.tree.inspector.emit("computed-view-property-expanded");
-      }).then(null, console.error);
+      CssHtmlTree.processTemplate(this.templateMatchedSelectors,
+        this.matchedSelectorsContainer, this);
+      this.matchedExpander.setAttribute("open", "");
     } else {
       this.matchedSelectorsContainer.innerHTML = "";
       this.matchedExpander.removeAttribute("open");
-      this.tree.inspector.emit("computed-view-property-collapsed");
-      return promise.resolve(undefined);
     }
-  },
-
-  get matchedSelectors()
-  {
-    return this._matchedSelectorResponse;
   },
 
   /**
@@ -1197,7 +761,7 @@ PropertyView.prototype = {
   {
     if (!this._matchedSelectorViews) {
       this._matchedSelectorViews = [];
-      this._matchedSelectorResponse.forEach(
+      this.propertyInfo.matchedSelectors.forEach(
         function matchedSelectorViews_convert(aSelectorInfo) {
           this._matchedSelectorViews.push(new SelectorView(this.tree, aSelectorInfo));
         }, this);
@@ -1207,26 +771,12 @@ PropertyView.prototype = {
   },
 
   /**
-   * Update all the selector source links to reflect whether we're linking to
-   * original sources (e.g. Sass files).
-   */
-  updateSourceLinks: function PropertyView_updateSourceLinks()
-  {
-    if (!this._matchedSelectorViews) {
-      return;
-    }
-    for (let view of this._matchedSelectorViews) {
-      view.updateSourceLink();
-    }
-  },
-
-  /**
    * The action when a user expands matched selectors.
    *
    * @param {Event} aEvent Used to determine the class name of the targets click
    * event.
    */
-  onMatchedToggle: function PropertyView_onMatchedToggle(aEvent)
+  matchedExpanderClick: function PropertyView_matchedExpanderClick(aEvent)
   {
     this.matchedExpanded = !this.matchedExpanded;
     this.refreshMatchedSelectors();
@@ -1238,7 +788,7 @@ PropertyView.prototype = {
    */
   mdnLinkClick: function PropertyView_mdnLinkClick(aEvent)
   {
-    let inspector = this.tree.inspector;
+    let inspector = this.tree.styleInspector.inspector;
 
     if (inspector.target.tab) {
       let browserWin = inspector.target.tab.ownerDocument.defaultView;
@@ -1246,28 +796,10 @@ PropertyView.prototype = {
     }
     aEvent.preventDefault();
   },
-
-  /**
-   * Destroy this property view, removing event listeners
-   */
-  destroy: function PropertyView_destroy() {
-    this.element.removeEventListener("dblclick", this.onMatchedToggle, false);
-    this.element.removeEventListener("keydown", this.onKeyDown, false);
-    this.element = null;
-
-    this.matchedExpander.removeEventListener("click", this.onMatchedToggle, false);
-    this.matchedExpander = null;
-
-    this.nameNode.removeEventListener("click", this.onFocus, false);
-    this.nameNode = null;
-
-    this.valueNode.removeEventListener("click", this.onFocus, false);
-    this.valueNode = null;
-  }
 };
 
 /**
- * A container to give us easy access to display data from a CssRule
+ * A container to view us easy access to display data from a CssRule
  * @param CssHtmlTree aTree, the owning CssHtmlTree
  * @param aSelectorInfo
  */
@@ -1276,8 +808,6 @@ function SelectorView(aTree, aSelectorInfo)
   this.tree = aTree;
   this.selectorInfo = aSelectorInfo;
   this._cacheStatusNames();
-
-  this.updateSourceLink();
 }
 
 /**
@@ -1335,102 +865,26 @@ SelectorView.prototype = {
     return SelectorView.CLASS_NAMES[this.selectorInfo.status - 1];
   },
 
-  get href()
-  {
-    if (this._href) {
-      return this._href;
-    }
-    let sheet = this.selectorInfo.rule.parentStyleSheet;
-    this._href = sheet ? sheet.href : "#";
-    return this._href;
-  },
-
-  get sourceText()
-  {
-    return this.selectorInfo.sourceText;
-  },
-
-
-  get value()
-  {
-    return this.selectorInfo.value;
-  },
-
-  get outputFragment()
-  {
-    // Sadly, because this fragment is added to the template by DOM Templater
-    // we lose any events that are attached. This means that URLs will open in a
-    // new window. At some point we should fix this by stopping using the
-    // templater.
-    let outputParser = this.tree._outputParser;
-    let frag = outputParser.parseCssProperty(
-      this.selectorInfo.name,
-      this.selectorInfo.value, {
-      colorSwatchClass: "computedview-colorswatch",
-      urlClass: "theme-link",
-      baseURI: this.selectorInfo.rule.href
-    });
-    return frag;
-  },
-
   /**
-   * Update the text of the source link to reflect whether we're showing
-   * original sources or not.
+   * A localized Get localized human readable info
    */
-  updateSourceLink: function()
-  {
-    return this.updateSource().then((oldSource) => {
-      if (oldSource != this.source && this.tree.element) {
-        let selector = '[sourcelocation="' + oldSource + '"]';
-        let link = this.tree.element.querySelector(selector);
-        if (link) {
-          link.textContent = this.source;
-          link.setAttribute("sourcelocation", this.source);
-        }
+  text: function SelectorView_text(aElement) {
+    let result = this.selectorInfo.selector.text;
+    if (this.selectorInfo.elementStyle) {
+      let source = this.selectorInfo.sourceElement;
+      let inspector = this.tree.styleInspector.inspector;
+
+      if (inspector.selection.node == source) {
+        result = "this";
+      } else {
+        result = CssLogic.getShortName(source);
       }
-    });
-  },
-
-  /**
-   * Update the 'source' store based on our original sources preference.
-   */
-  updateSource: function()
-  {
-    let rule = this.selectorInfo.rule;
-    this.sheet = rule.parentStyleSheet;
-
-    if (!rule || !this.sheet) {
-      let oldSource = this.source;
-      this.source = CssLogic.l10n("rule.sourceElement");
-      this.href = "#";
-      return promise.resolve(oldSource);
+      result += ".style";
     }
 
-    let showOrig = Services.prefs.getBoolPref(PREF_ORIG_SOURCES);
-
-    if (showOrig && rule.type != ELEMENT_STYLE) {
-      let deferred = promise.defer();
-
-      // set as this first so we show something while we're fetching
-      this.source = CssLogic.shortSource(this.sheet) + ":" + rule.line;
-
-      rule.getOriginalLocation().then(({href, line, column}) => {
-        let oldSource = this.source;
-        this.source = CssLogic.shortSource({href: href}) + ":" + line;
-        deferred.resolve(oldSource);
-      });
-
-      return deferred.promise;
-    }
-
-    let oldSource = this.source;
-    this.source = CssLogic.shortSource(this.sheet) + ":" + rule.line;
-    return promise.resolve(oldSource);
+    return result;
   },
 
-  /**
-   * Open the style editor if the RETURN key was pressed.
-   */
   maybeOpenStyleEditor: function(aEvent)
   {
     let keyEvent = Ci.nsIDOMKeyEvent;
@@ -1451,42 +905,54 @@ SelectorView.prototype = {
    */
   openStyleEditor: function(aEvent)
   {
-    let inspector = this.tree.inspector;
-    let rule = this.selectorInfo.rule;
+    let inspector = this.tree.styleInspector.inspector;
+    let contentDoc = inspector.selection.document;
+    let cssSheet = this.selectorInfo.selector._cssRule._cssSheet;
+    let line = this.selectorInfo.ruleLine || 0;
+    let contentSheet = false;
+    let styleSheet;
+    let styleSheets;
 
     // The style editor can only display stylesheets coming from content because
     // chrome stylesheets are not listed in the editor's stylesheet selector.
     //
     // If the stylesheet is a content stylesheet we send it to the style
     // editor else we display it in the view source window.
-    let sheet = rule.parentStyleSheet;
-    if (!sheet || sheet.isSystem) {
-      let contentDoc = null;
-      if (this.tree.viewedElement.isLocal_toBeDeprecated()) {
-        let rawNode = this.tree.viewedElement.rawNode();
-        if (rawNode) {
-          contentDoc = rawNode.ownerDocument;
+    //
+    // We check if cssSheet exists in case of inline styles (which contain no
+    // sheet)
+    if (cssSheet) {
+      styleSheet = cssSheet.domSheet;
+      styleSheets = contentDoc.styleSheets;
+
+      // Array.prototype.indexOf always returns -1 here so we loop through
+      // the styleSheets array instead.
+      for each (let sheet in styleSheets) {
+        if (sheet == styleSheet) {
+          contentSheet = true;
+          break;
         }
       }
-      let viewSourceUtils = inspector.viewSourceUtils;
-      viewSourceUtils.viewSource(rule.href, null, contentDoc, rule.line);
-      return;
     }
 
-    let location = promise.resolve(rule.location);
-    if (Services.prefs.getBoolPref(PREF_ORIG_SOURCES)) {
-      location = rule.getOriginalLocation();
-    }
-    location.then(({source, href, line, column}) => {
+    if (contentSheet) {
       let target = inspector.target;
+
       if (ToolDefinitions.styleEditor.isTargetSupported(target)) {
         gDevTools.showToolbox(target, "styleeditor").then(function(toolbox) {
-          let sheet = source || href;
-          toolbox.getCurrentPanel().selectStyleSheet(sheet, line, column);
+          toolbox.getCurrentPanel().selectStyleSheet(styleSheet.href, line);
         });
       }
-    });
-  }
+    } else {
+      let href = styleSheet ? styleSheet.href : "";
+      let viewSourceUtils = inspector.viewSourceUtils;
+
+      if (this.selectorInfo.sourceElement) {
+        href = this.selectorInfo.sourceElement.ownerDocument.location.href;
+      }
+      viewSourceUtils.viewSource(href, null, contentDoc, line);
+    }
+  },
 };
 
 exports.CssHtmlTree = CssHtmlTree;

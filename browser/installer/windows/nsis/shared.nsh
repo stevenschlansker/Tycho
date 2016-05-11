@@ -5,56 +5,6 @@
 ; The registration ID of the COM server which is used for choosing wether
 ; to launch the Win8 metro browser or desktop browser.
 !define DELEGATE_EXECUTE_HANDLER_ID {5100FEC1-212B-4BF5-9BF8-3E650FD794A3}
-;
-; Defines for adjust token privs and for enumerating keys
-!ifndef TOKEN_QUERY
-  !define TOKEN_QUERY             0x0008
-!endif
-!ifndef TOKEN_ADJUST_PRIVILEGES
-  !define TOKEN_ADJUST_PRIVILEGES 0x0020
-!endif
-!ifndef SE_RESTORE_NAME
-  !define SE_RESTORE_NAME         SeRestorePrivilege
-!endif
-!ifndef SE_PRIVILEGE_ENABLED
-  !define SE_PRIVILEGE_ENABLED    0x00000002
-!endif
-!ifndef HKEY_USERS
-  !define HKEY_USERS              0x80000003
-!endif
-
-; Does metro registration for the command execute handler
-Function RegisterCEH
-!ifdef MOZ_METRO
-  ${If} ${AtLeastWin8}
-    ${CleanupMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID} \
-                                        "FirefoxURL" \
-                                        "FirefoxHTML"
-    ${AddMetroBrowserHandlerValues} ${DELEGATE_EXECUTE_HANDLER_ID} \
-                                    "$INSTDIR\CommandExecuteHandler.exe" \
-                                    $AppUserModelID \
-                                    "FirefoxURL" \
-                                    "FirefoxHTML"
-  ${EndIf}
-!endif
-FunctionEnd
-
-; If we're in Win8 make sure we have a start menu shortcut and that it has
-; the correct AppuserModelID so that the Metro browser has a Metro tile.
-Function RegisterStartMenuTile
-!ifdef MOZ_METRO
-  ${If} ${AtLeastWin8}
-    CreateShortCut "$SMPROGRAMS\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
-    ${If} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-      ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandFullName}.lnk" \
-                                             "$INSTDIR"
-      ${If} "$AppUserModelID" != ""
-        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
-      ${EndIf}
-    ${EndIf}
-  ${EndIf}
-!endif
-FunctionEnd
 
 !macro PostUpdate
 
@@ -65,20 +15,16 @@ FunctionEnd
   System::Call "kernel32::ProcessIdToSessionId(i $0, *i ${NSIS_MAX_STRLEN} r9)"
 
   ; Determine if we're the protected UserChoice default or not. If so fix the
-  ; start menu tile.  In case there are 2 Firefox installations, we only do
+  ; start menu tile.  In case there are 2 Pale Moon installations, we only do
   ; this if the application being updated is the default.
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice" "ProgId"
-  ${If} $0 == "FirefoxURL"
+  ${If} $0 == "PaleMoonURL"
   ${AndIf} $9 != 0 ; We're not running in session 0
-    ReadRegStr $0 HKCU "Software\Classes\FirefoxURL\shell\open\command" ""
+    ReadRegStr $0 HKCU "Software\Classes\PaleMoonURL\shell\open\command" ""
     ${GetPathFromString} "$0" $0
     ${GetParent} "$0" $0
     ${If} ${FileExists} "$0"
       ${GetLongPath} "$0" $0
-    ${EndIf}
-    ${If} "$0" == "$INSTDIR"
-      ; Win8 specific registration
-      Call RegisterStartMenuTile
     ${EndIf}
   ${EndIf}
 
@@ -114,9 +60,6 @@ FunctionEnd
 
     ; Win7 taskbar and start menu link maintenance
     Call FixShortcutAppModelIDs
-
-    ; Add the Firewall entries after an update
-    Call AddFirewallEntries
 
     ; Only update the Clients\StartMenuInternet registry key values in HKLM if
     ; they don't exist or this installation is the same as the one set in those
@@ -177,74 +120,6 @@ FunctionEnd
 
   RmDir /r /REBOOTOK "$INSTDIR\${TO_BE_DELETED}"
 
-!ifdef MOZ_MAINTENANCE_SERVICE
-  Call IsUserAdmin
-  Pop $R0
-  ${If} $R0 == "true"
-  ; Only proceed if we have HKLM write access
-  ${AndIf} $TmpVal == "HKLM"
-  ; On Windows 2000 we do not install the maintenance service.
-  ${AndIf} ${AtLeastWinXP}
-    ; We check to see if the maintenance service install was already attempted.
-    ; Since the Maintenance service can be installed either x86 or x64,
-    ; always use the 64-bit registry for checking if an attempt was made.
-    ${If} ${RunningX64}
-      SetRegView 64
-    ${EndIf}
-    ReadRegDWORD $5 HKLM "Software\Mozilla\MaintenanceService" "Attempted"
-    ClearErrors
-    ${If} ${RunningX64}
-      SetRegView lastused
-    ${EndIf}
-
-    ; Add the registry keys for allowed certificates.
-    ${AddMaintCertKeys}
-
-    ; If the maintenance service is already installed, do nothing.
-    ; The maintenance service will launch:
-    ; maintenanceservice_installer.exe /Upgrade to upgrade the maintenance
-    ; service if necessary.   If the update was done from updater.exe without
-    ; the service (i.e. service is failing), updater.exe will do the update of
-    ; the service.  The reasons we do not do it here is because we don't want
-    ; to have to prompt for limited user accounts when the service isn't used
-    ; and we currently call the PostUpdate twice, once for the user and once
-    ; for the SYSTEM account.  Also, this would stop the maintenance service
-    ; and we need a return result back to the service when run that way.
-    ${If} $5 == ""
-      ; An install of maintenance service was never attempted.
-      ; We know we are an Admin and that we have write access into HKLM
-      ; based on the above checks, so attempt to just run the EXE.
-      ; In the worst case, in case there is some edge case with the
-      ; IsAdmin check and the permissions check, the maintenance service
-      ; will just fail to be attempted to be installed.
-      nsExec::Exec "$\"$INSTDIR\maintenanceservice_installer.exe$\""
-    ${EndIf}
-  ${EndIf}
-!endif
-
-; Register the DEH
-!ifdef MOZ_METRO
-  ${If} ${AtLeastWin8}
-  ${AndIf} $9 != 0 ; We're not running in session 0
-    ; If RegisterCEH is called too close to changing the shortcut AppUserModelID
-    ; and if the tile image is not already in cache.  Then Windows won't refresh
-    ; the tile image on the start screen.  So wait before calling RegisterCEH.
-    ; We only need to do this when the DEH doesn't already exist.
-    ReadRegStr $0 HKCU "Software\Classes\FirefoxURL\shell\open\command" "DelegateExecute"
-    ${If} $0 != ${DELEGATE_EXECUTE_HANDLER_ID}
-      Sleep 3000
-    ${EndIf}
-    Call RegisterCEH
-  ${EndIf}
-!else
-  ; The metro browser is not enabled by the mozconfig.
-  ${If} ${AtLeastWin8}
-    ${RemoveDEHRegistration} ${DELEGATE_EXECUTE_HANDLER_ID} \
-                             $AppUserModelID \
-                             "FirefoxURL" \
-                             "FirefoxHTML"
-  ${EndIf}
-!endif
 !macroend
 !define PostUpdate "!insertmacro PostUpdate"
 
@@ -403,12 +278,13 @@ FunctionEnd
   ClearErrors
   EnumRegKey $7 HKCR "${FILE_TYPE}" 0
   ${If} ${Errors}
-    WriteRegStr SHCTX "SOFTWARE\Classes\${FILE_TYPE}"  "" "FirefoxHTML"
+    WriteRegStr SHCTX "SOFTWARE\Classes\${FILE_TYPE}"  "" "PaleMoonHTML"
   ${EndIf}
 !macroend
 !define AddAssociationIfNoneExist "!insertmacro AddAssociationIfNoneExist"
 
-; Adds the protocol and file handler registry entries for making Firefox the
+
+; Adds the protocol and file handler registry entries for making Pale Moon the
 ; default handler (uses SHCTX).
 !macro SetHandlers
   ${GetLongPath} "$INSTDIR\${FileMainEXE}" $8
@@ -416,47 +292,45 @@ FunctionEnd
   StrCpy $0 "SOFTWARE\Classes"
   StrCpy $2 "$\"$8$\" -osint -url $\"%1$\""
 
-  ; Associate the file handlers with FirefoxHTML
+  ; Associate the file handlers with PaleMoonHTML
   ReadRegStr $6 SHCTX "$0\.htm" ""
-  ${If} "$6" != "FirefoxHTML"
-    WriteRegStr SHCTX "$0\.htm"   "" "FirefoxHTML"
+  ${If} "$6" != "PaleMoonHTML"
+    WriteRegStr SHCTX "$0\.htm"   "" "PaleMoonHTML"
   ${EndIf}
 
   ReadRegStr $6 SHCTX "$0\.html" ""
-  ${If} "$6" != "FirefoxHTML"
-    WriteRegStr SHCTX "$0\.html"  "" "FirefoxHTML"
+  ${If} "$6" != "PaleMoonHTML"
+    WriteRegStr SHCTX "$0\.html"  "" "PaleMoonHTML"
   ${EndIf}
 
   ReadRegStr $6 SHCTX "$0\.shtml" ""
-  ${If} "$6" != "FirefoxHTML"
-    WriteRegStr SHCTX "$0\.shtml" "" "FirefoxHTML"
+  ${If} "$6" != "PaleMoonHTML"
+    WriteRegStr SHCTX "$0\.shtml" "" "PaleMoonHTML"
   ${EndIf}
 
   ReadRegStr $6 SHCTX "$0\.xht" ""
-  ${If} "$6" != "FirefoxHTML"
-    WriteRegStr SHCTX "$0\.xht"   "" "FirefoxHTML"
+  ${If} "$6" != "PaleMoonHTML"
+    WriteRegStr SHCTX "$0\.xht"   "" "PaleMoonHTML"
   ${EndIf}
 
   ReadRegStr $6 SHCTX "$0\.xhtml" ""
-  ${If} "$6" != "FirefoxHTML"
-    WriteRegStr SHCTX "$0\.xhtml" "" "FirefoxHTML"
+  ${If} "$6" != "PaleMoonHTML"
+    WriteRegStr SHCTX "$0\.xhtml" "" "PaleMoonHTML"
   ${EndIf}
 
-  ${AddAssociationIfNoneExist} ".pdf"
+  ;Register file associations, but only if they don't exist yet.
   ${AddAssociationIfNoneExist} ".oga"
   ${AddAssociationIfNoneExist} ".ogg"
   ${AddAssociationIfNoneExist} ".ogv"
-  ${AddAssociationIfNoneExist} ".pdf"
   ${AddAssociationIfNoneExist} ".webm"
 
-  ; An empty string is used for the 5th param because FirefoxHTML is not a
+  ; An empty string is used for the 5th param because PaleMoonHTML is not a
   ; protocol handler
-  ${AddDisabledDDEHandlerValues} "FirefoxHTML" "$2" "$8,1" \
+  ${AddDisabledDDEHandlerValues} "PaleMoonHTML" "$2" "$8,1" \
                                  "${AppRegName} HTML Document" ""
 
-  ${AddDisabledDDEHandlerValues} "FirefoxURL" "$2" "$8,1" "${AppRegName} URL" \
+  ${AddDisabledDDEHandlerValues} "PaleMoonURL" "$2" "$8,1" "${AppRegName} URL" \
                                  "true"
-  Call RegisterCEH
 
   ; An empty string is used for the 4th & 5th params because the following
   ; protocol handlers already have a display name and the additional keys
@@ -467,7 +341,7 @@ FunctionEnd
 !macroend
 !define SetHandlers "!insertmacro SetHandlers"
 
-; Adds the HKLM\Software\Clients\StartMenuInternet\FIREFOX.EXE registry
+; Adds the HKLM\Software\Clients\StartMenuInternet\{EXE} registry
 ; entries (does not use SHCTX).
 ;
 ; The values for StartMenuInternet are only valid under HKLM and there can only
@@ -526,35 +400,35 @@ FunctionEnd
   WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationIcon" "$8,0"
   WriteRegStr ${RegKey} "$0\Capabilities" "ApplicationName" "${BrandShortName}"
 
-  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".htm"   "FirefoxHTML"
-  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".html"  "FirefoxHTML"
-  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".shtml" "FirefoxHTML"
-  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xht"   "FirefoxHTML"
-  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xhtml" "FirefoxHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".htm"   "PaleMoonHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".html"  "PaleMoonHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".shtml" "PaleMoonHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xht"   "PaleMoonHTML"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xhtml" "PaleMoonHTML"
 
   WriteRegStr ${RegKey} "$0\Capabilities\StartMenu" "StartMenuInternet" "$R9"
 
-  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "ftp"    "FirefoxURL"
-  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "http"   "FirefoxURL"
-  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "https"  "FirefoxURL"
+  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "ftp"    "PaleMoonURL"
+  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "http"   "PaleMoonURL"
+  WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "https"  "PaleMoonURL"
 
   ; Vista Registered Application
   WriteRegStr ${RegKey} "Software\RegisteredApplications" "${AppRegName}" "$0\Capabilities"
 !macroend
 !define SetStartMenuInternet "!insertmacro SetStartMenuInternet"
 
-; The IconHandler reference for FirefoxHTML can end up in an inconsistent state
+; The IconHandler reference for PaleMoonHTML can end up in an inconsistent state
 ; due to changes not being detected by the IconHandler for side by side
 ; installs (see bug 268512). The symptoms can be either an incorrect icon or no
-; icon being displayed for files associated with Firefox (does not use SHCTX).
+; icon being displayed for files associated with Pale Moon (does not use SHCTX).
 !macro FixShellIconHandler RegKey
   ClearErrors
-  ReadRegStr $1 ${RegKey} "Software\Classes\FirefoxHTML\ShellEx\IconHandler" ""
+  ReadRegStr $1 ${RegKey} "Software\Classes\PaleMoonHTML\ShellEx\IconHandler" ""
   ${Unless} ${Errors}
-    ReadRegStr $1 ${RegKey} "Software\Classes\FirefoxHTML\DefaultIcon" ""
+    ReadRegStr $1 ${RegKey} "Software\Classes\PaleMoonHTML\DefaultIcon" ""
     ${GetLongPath} "$INSTDIR\${FileMainEXE}" $2
     ${If} "$1" != "$2,1"
-      WriteRegStr ${RegKey} "Software\Classes\FirefoxHTML\DefaultIcon" "" "$2,1"
+      WriteRegStr ${RegKey} "Software\Classes\PaleMoonHTML\DefaultIcon" "" "$2,1"
     ${EndIf}
   ${EndUnless}
 !macroend
@@ -562,67 +436,37 @@ FunctionEnd
 
 ; Add Software\Mozilla\ registry entries (uses SHCTX).
 !macro SetAppKeys
-  ; Check if this is an ESR release and if so add registry values so it is
-  ; possible to determine that this is an ESR install (bug 726781).
-  ClearErrors
-  ${WordFind} "${UpdateChannel}" "esr" "E#" $3
-  ${If} ${Errors}
-    StrCpy $3 ""
-  ${Else}
-    StrCpy $3 " ESR"
-  ${EndIf}
-
   ${GetLongPath} "$INSTDIR" $8
-  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal}\${AppVersion}$3 (${ARCH} ${AB_CD})\Main"
+  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal}\${AppVersion} (${AB_CD})\Main"
   ${WriteRegStr2} $TmpVal "$0" "Install Directory" "$8" 0
   ${WriteRegStr2} $TmpVal "$0" "PathToExe" "$8\${FileMainEXE}" 0
 
-  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal}\${AppVersion}$3 (${ARCH} ${AB_CD})\Uninstall"
-  ${WriteRegStr2} $TmpVal "$0" "Description" "${BrandFullNameInternal} ${AppVersion}$3 (${ARCH} ${AB_CD})" 0
+  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal}\${AppVersion} (${AB_CD})\Uninstall"
+  ${WriteRegStr2} $TmpVal "$0" "Description" "${BrandFullNameInternal} ${AppVersion} (${ARCH} ${AB_CD})" 0
 
-  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal}\${AppVersion}$3 (${ARCH} ${AB_CD})"
-  ${WriteRegStr2} $TmpVal  "$0" "" "${AppVersion}$3 (${ARCH} ${AB_CD})" 0
-  ${If} "$3" == ""
-    DeleteRegValue SHCTX "$0" "ESR"
-  ${Else}
-    ${WriteRegDWORD2} $TmpVal "$0" "ESR" 1 0
-  ${EndIf}
+  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal}\${AppVersion} (${AB_CD})"
+  ${WriteRegStr2} $TmpVal  "$0" "" "${AppVersion} (${AB_CD})" 0
 
-  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal} ${AppVersion}$3\bin"
+  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal} ${AppVersion}\bin"
   ${WriteRegStr2} $TmpVal "$0" "PathToExe" "$8\${FileMainEXE}" 0
 
-  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal} ${AppVersion}$3\extensions"
+  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal} ${AppVersion}\extensions"
   ${WriteRegStr2} $TmpVal "$0" "Components" "$8\components" 0
   ${WriteRegStr2} $TmpVal "$0" "Plugins" "$8\plugins" 0
 
-  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal} ${AppVersion}$3"
+  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal} ${AppVersion}"
   ${WriteRegStr2} $TmpVal "$0" "GoannaVer" "${GREVersion}" 0
-  ${If} "$3" == ""
-    DeleteRegValue SHCTX "$0" "ESR"
-  ${Else}
-    ${WriteRegDWORD2} $TmpVal "$0" "ESR" 1 0
-  ${EndIf}
 
-  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal}$3"
+  StrCpy $0 "Software\Mozilla\${BrandFullNameInternal}"
   ${WriteRegStr2} $TmpVal "$0" "" "${GREVersion}" 0
-  ${WriteRegStr2} $TmpVal "$0" "CurrentVersion" "${AppVersion}$3 (${ARCH} ${AB_CD})" 0
+  ${WriteRegStr2} $TmpVal "$0" "CurrentVersion" "${AppVersion} (${AB_CD})" 0
 !macroend
 !define SetAppKeys "!insertmacro SetAppKeys"
 
 ; Add uninstall registry entries. This macro tests for write access to determine
 ; if the uninstall keys should be added to HKLM or HKCU.
 !macro SetUninstallKeys
-  ; Check if this is an ESR release and if so add registry values so it is
-  ; possible to determine that this is an ESR install (bug 726781).
-  ClearErrors
-  ${WordFind} "${UpdateChannel}" "esr" "E#" $3
-  ${If} ${Errors}
-    StrCpy $3 ""
-  ${Else}
-    StrCpy $3 " ESR"
-  ${EndIf}
-
-  StrCpy $0 "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BrandFullNameInternal} ${AppVersion}$3 (${ARCH} ${AB_CD})"
+  StrCpy $0 "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BrandFullNameInternal} ${AppVersion} (${ARCH} ${AB_CD})"
 
   StrCpy $2 ""
   ClearErrors
@@ -649,24 +493,15 @@ FunctionEnd
     ${GetLongPath} "$INSTDIR" $8
 
     ; Write the uninstall registry keys
-    ${WriteRegStr2} $1 "$0" "Comments" "${BrandFullNameInternal} ${AppVersion}$3 (${ARCH} ${AB_CD})" 0
+    ${WriteRegStr2} $1 "$0" "Comments" "${BrandFullNameInternal} ${AppVersion} (${ARCH} ${AB_CD})" 0
     ${WriteRegStr2} $1 "$0" "DisplayIcon" "$8\${FileMainEXE},0" 0
-    ${WriteRegStr2} $1 "$0" "DisplayName" "${BrandFullNameInternal} ${AppVersion}$3 (${ARCH} ${AB_CD})" 0
+    ${WriteRegStr2} $1 "$0" "DisplayName" "${BrandFullNameInternal} ${AppVersion} (${ARCH} ${AB_CD})" 0
     ${WriteRegStr2} $1 "$0" "DisplayVersion" "${AppVersion}" 0
-    ${WriteRegStr2} $1 "$0" "HelpLink" "${HelpLink}" 0
     ${WriteRegStr2} $1 "$0" "InstallLocation" "$8" 0
-    ${WriteRegStr2} $1 "$0" "Publisher" "Mozilla" 0
+    ${WriteRegStr2} $1 "$0" "Publisher" "Moonchild Productions" 0
     ${WriteRegStr2} $1 "$0" "UninstallString" "$\"$8\uninstall\helper.exe$\"" 0
-    DeleteRegValue SHCTX "$0" "URLInfoAbout"
-; Don't add URLUpdateInfo which is the release notes url except for the release
-; and esr channels since nightly, aurora, and beta do not have release notes.
-; Note: URLUpdateInfo is only defined in the official branding.nsi.
-!ifdef URLUpdateInfo
-!ifndef BETA_UPDATE_CHANNEL
-    ${WriteRegStr2} $1 "$0" "URLUpdateInfo" "${URLUpdateInfo}" 0
-!endif
-!endif
     ${WriteRegStr2} $1 "$0" "URLInfoAbout" "${URLInfoAbout}" 0
+    ${WriteRegStr2} $1 "$0" "URLUpdateInfo" "${URLUpdateInfo}" 0
     ${WriteRegDWORD2} $1 "$0" "NoModify" 1 0
     ${WriteRegDWORD2} $1 "$0" "NoRepair" 1 0
 
@@ -683,13 +518,13 @@ FunctionEnd
 !define SetUninstallKeys "!insertmacro SetUninstallKeys"
 
 ; Due to a bug when associating some file handlers, only SHCTX was checked for
-; some file types such as ".pdf". SHCTX is set to HKCU or HKLM depending on
+; some file types such as ".webm". SHCTX is set to HKCU or HKLM depending on
 ; whether the installer has write access to HKLM. The bug would happen when
 ; HCKU was checked and didn't exist since programs aren't required to set the
 ; HKCU Software\Classes keys when associating handlers. The fix uses the merged
 ; view in HKCR to check for existance of an existing association. This macro
 ; cleans affected installations by removing the HKLM and HKCU value if it is set
-; to FirefoxHTML when there is a value for PersistentHandler or by removing the
+; to PaleMoonHTML when there is a value for PersistentHandler or by removing the
 ; HKCU value when the HKLM value has a value other than an empty string.
 !macro FixBadFileAssociation FILE_TYPE
   ; Only delete the default value in case the key has values for OpenWithList,
@@ -698,16 +533,16 @@ FunctionEnd
   ReadRegStr $1 HKLM "Software\Classes\${FILE_TYPE}" ""
   ReadRegStr $2 HKCR "${FILE_TYPE}\PersistentHandler" ""
   ${If} "$2" != ""
-    ; Since there is a persistent handler remove FirefoxHTML as the default
-    ; value from both HKCU and HKLM if it set to FirefoxHTML.
-    ${If} "$0" == "FirefoxHTML"
+    ; Since there is a persistent handler remove PaleMoonHTML as the default
+    ; value from both HKCU and HKLM if it is set to PaleMoonHTML.
+    ${If} "$0" == "PaleMoonHTML"
       DeleteRegValue HKCU "Software\Classes\${FILE_TYPE}" ""
     ${EndIf}
-    ${If} "$1" == "FirefoxHTML"
+    ${If} "$1" == "PaleMoonHTML"
       DeleteRegValue HKLM "Software\Classes\${FILE_TYPE}" ""
     ${EndIf}
-  ${ElseIf} "$0" == "FirefoxHTML"
-    ; Since KHCU is set to FirefoxHTML remove FirefoxHTML as the default value
+  ${ElseIf} "$0" == "PaleMoonHTML"
+    ; Since KHCU is set to PaleMoonHTML, remove it as the default value
     ; from HKCU if HKLM is set to a value other than an empty string.
     ${If} "$1" != ""
       DeleteRegValue HKCU "Software\Classes\${FILE_TYPE}" ""
@@ -744,11 +579,9 @@ FunctionEnd
   ${EndIf}
 
   ; Remove possibly badly associated file types
-  ${FixBadFileAssociation} ".pdf"
   ${FixBadFileAssociation} ".oga"
   ${FixBadFileAssociation} ".ogg"
   ${FixBadFileAssociation} ".ogv"
-  ${FixBadFileAssociation} ".pdf"
   ${FixBadFileAssociation} ".webm"
 !macroend
 !define FixClassKeys "!insertmacro FixClassKeys"
@@ -763,17 +596,17 @@ FunctionEnd
   ; Only set the file and protocol handlers if the existing one under HKCR is
   ; for this install location.
 
-  ${IsHandlerForInstallDir} "FirefoxHTML" $R9
+  ${IsHandlerForInstallDir} "PaleMoonHTML" $R9
   ${If} "$R9" == "true"
-    ; An empty string is used for the 5th param because FirefoxHTML is not a
+    ; An empty string is used for the 5th param because PaleMoonHTML is not a
     ; protocol handler.
-    ${AddDisabledDDEHandlerValues} "FirefoxHTML" "$2" "$8,1" \
+    ${AddDisabledDDEHandlerValues} "PaleMoonHTML" "$2" "$8,1" \
                                    "${AppRegName} HTML Document" ""
   ${EndIf}
 
-  ${IsHandlerForInstallDir} "FirefoxURL" $R9
+  ${IsHandlerForInstallDir} "PaleMoonURL" $R9
   ${If} "$R9" == "true"
-    ${AddDisabledDDEHandlerValues} "FirefoxURL" "$2" "$8,1" \
+    ${AddDisabledDDEHandlerValues} "PaleMoonURL" "$2" "$8,1" \
                                    "${AppRegName} URL" "true"
   ${EndIf}
 
@@ -797,68 +630,21 @@ FunctionEnd
 !macroend
 !define UpdateProtocolHandlers "!insertmacro UpdateProtocolHandlers"
 
-!ifdef MOZ_MAINTENANCE_SERVICE
-; Adds maintenance service certificate keys for the install dir.
-; For the cert to work, it must also be signed by a trusted cert for the user.
-!macro AddMaintCertKeys
-  Push $R0
-  ; Allow main Mozilla cert information for updates
-  ; This call will push the needed key on the stack
-  ServicesHelper::PathToUniqueRegistryPath "$INSTDIR"
-  Pop $R0
-  ${If} $R0 != ""
-    ; More than one certificate can be specified in a different subfolder
-    ; for example: $R0\1, but each individual binary can be signed
-    ; with at most one certificate.  A fallback certificate can only be used
-    ; if the binary is replaced with a different certificate.
-    ; We always use the 64bit registry for certs.
-    ${If} ${RunningX64}
-      SetRegView 64
-    ${EndIf}
-
-    ; PrefetchProcessName was originally used to experiment with deleting
-    ; Windows prefetch as a speed optimization.  It is no longer used though.
-    DeleteRegValue HKLM "$R0" "prefetchProcessName"
-
-    ; Setting the Attempted value will ensure that a new Maintenance Service
-    ; install will never be attempted again after this from updates.  The value
-    ; is used only to see if updates should attempt new service installs.
-    WriteRegDWORD HKLM "Software\Mozilla\MaintenanceService" "Attempted" 1
-
-    ; These values associate the allowed certificates for the current
-    ; installation.
-    WriteRegStr HKLM "$R0\0" "name" "${CERTIFICATE_NAME}"
-    WriteRegStr HKLM "$R0\0" "issuer" "${CERTIFICATE_ISSUER}"
-    ; These values associate the allowed certificates for the previous
-    ;  installation, so that we can update from it cleanly using the
-    ;  old updater.exe (which will still have this signature).
-    WriteRegStr HKLM "$R0\1" "name" "${CERTIFICATE_NAME_PREVIOUS}"
-    WriteRegStr HKLM "$R0\1" "issuer" "${CERTIFICATE_ISSUER_PREVIOUS}"
-    ${If} ${RunningX64}
-      SetRegView lastused
-    ${EndIf}
-    ClearErrors
-  ${EndIf}
-  ; Restore the previously used value back
-  Pop $R0
-!macroend
-!define AddMaintCertKeys "!insertmacro AddMaintCertKeys"
-!endif
-
 ; Removes various registry entries for reasons noted below (does not use SHCTX).
 !macro RemoveDeprecatedKeys
   StrCpy $0 "SOFTWARE\Classes"
   ; Remove support for launching gopher urls from the shell during install or
-  ; update if the DefaultIcon is from firefox.exe.
+  ; update if the DefaultIcon is from palemoon.exe.
   ${RegCleanAppHandler} "gopher"
 
   ; Remove support for launching chrome urls from the shell during install or
-  ; update if the DefaultIcon is from firefox.exe (Bug 301073).
+  ; update if the DefaultIcon is from palemoon.exe (Bug 301073).
   ${RegCleanAppHandler} "chrome"
 
-  ; Remove protocol handler registry keys added by the MS shim
-  DeleteRegKey HKLM "Software\Classes\Firefox.URL"
-  DeleteRegKey HKCU "Software\Classes\Firefox.URL"
+  ; Remove the app compatibility registry key
+  StrCpy $0 "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
+  DeleteRegValue HKLM "$0" "$INSTDIR\${FileMainEXE}"
+  DeleteRegValue HKCU "$0" "$INSTDIR\${FileMainEXE}"
 
   ; Delete gopher from Capabilities\URLAssociations if it is present.
   ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
@@ -869,199 +655,17 @@ FunctionEnd
     DeleteRegValue HKLM "$0\Capabilities\URLAssociations" "gopher"
   ${EndUnless}
 
-  ; Delete gopher from the user's UrlAssociations if it points to FirefoxURL.
+  ; Delete gopher from the user's UrlAssociations if it points to PaleMoonURL.
   StrCpy $0 "Software\Microsoft\Windows\Shell\Associations\UrlAssociations\gopher"
   ReadRegStr $2 HKCU "$0\UserChoice" "Progid"
-  ${If} "$2" == "FirefoxURL"
+  ${If} "$2" == "PaleMoonURL"
     DeleteRegKey HKCU "$0"
   ${EndIf}
 !macroend
 !define RemoveDeprecatedKeys "!insertmacro RemoveDeprecatedKeys"
 
-; Resets Win8+ specific toast keys Windows sets. We call this on a
-; fresh install and on uninstall.
-!macro ResetWin8PromptKeys KEY PREFIX
-  ${If} ${AtLeastWin8}
-    DeleteRegValue ${KEY} "${PREFIX}Software\Microsoft\Windows\CurrentVersion\ApplicationAssociationToasts" "FirefoxHTML_.htm"
-    DeleteRegValue ${KEY} "${PREFIX}Software\Microsoft\Windows\CurrentVersion\ApplicationAssociationToasts" "FirefoxHTML_.html"
-    DeleteRegValue ${KEY} "${PREFIX}Software\Microsoft\Windows\CurrentVersion\ApplicationAssociationToasts" "FirefoxHTML_.xht"
-    DeleteRegValue ${KEY} "${PREFIX}Software\Microsoft\Windows\CurrentVersion\ApplicationAssociationToasts" "FirefoxHTML_.xhtml"
-    DeleteRegValue ${KEY} "${PREFIX}Software\Microsoft\Windows\CurrentVersion\ApplicationAssociationToasts" "FirefoxHTML_.shtml"
-    DeleteRegValue ${KEY} "${PREFIX}Software\Microsoft\Windows\CurrentVersion\ApplicationAssociationToasts" "FirefoxURL_ftp"
-    DeleteRegValue ${KEY} "${PREFIX}Software\Microsoft\Windows\CurrentVersion\ApplicationAssociationToasts" "FirefoxURL_http"
-    DeleteRegValue ${KEY} "${PREFIX}Software\Microsoft\Windows\CurrentVersion\ApplicationAssociationToasts" "FirefoxURL_https"
-  ${EndIf}
-!macroend
-!define ResetWin8PromptKeys "!insertmacro ResetWin8PromptKeys"
-
-!ifdef MOZ_METRO
-; Resets Win8+ Metro specific splash screen info. Relies
-; on AppUserModelID.
-!macro ResetWin8MetroSplash
-  ${If} ${AtLeastWin8}
-  ${AndIf} "$AppUserModelID" != ""
-    DeleteRegKey HKCR "Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData\DefaultBrowser_NOPUBLISHERID\SplashScreen\DefaultBrowser_NOPUBLISHERID!$AppUserModelID"
-  ${EndIf}
-!macroend
-!define ResetWin8MetroSplash "!insertmacro ResetWin8MetroSplash"
-!endif
-
-; Adds SE_RESTORE_NAME privs
-!macro AcquireSERestoreName
-  StrCpy $R1 0
-
-  System::Call "kernel32::GetCurrentProcess() i .R0"
-  System::Call "advapi32::OpenProcessToken(i R0, i ${TOKEN_QUERY}|${TOKEN_ADJUST_PRIVILEGES}, \
-                                          *i R1R1) i .R0"
-  ${If} $R0 != 0
-    System::Call "advapi32::LookupPrivilegeValue(t n, t '${SE_RESTORE_NAME}', *l .R2) i .R0"
-    ${If} $R0 != 0
-      System::Call "*(i 1, l R2, i ${SE_PRIVILEGE_ENABLED}) i .R0"
-      System::Call "advapi32::AdjustTokenPrivileges(i R1, i 0, i R0, i 0, i 0, i 0)"
-      System::Free $R0
-    ${EndIf}
-    System::Call "kernel32::CloseHandle(i R1)"
-  ${EndIf}
-!macroend
-!define AcquireSERestoreName "!insertmacro AcquireSERestoreName"
-!define un.AcquireSERestoreName "!insertmacro AcquireSERestoreName"
-
-; Mounts all user ntuser.dat files into the registry as a subkey of HKU
-!macro MountRegistryIntoHKU
-  ; $0 is used as an index for HKEY_USERS enumeration
-  StrCpy $0 0
-  ${Do}
-    EnumRegKey $1 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" $0
-    ${If} $1 == ""
-      ${Break}
-    ${EndIf}
-    ReadRegStr $2 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$1" "ProfileImagePath"
-    System::Call "advapi32::RegLoadKey(i ${HKEY_USERS}, t 'User-$0', t '$2\ntuser.dat')"
-    System::Call "advapi32::RegLoadKey(i ${HKEY_USERS}, t 'User-$0_Classes', t '$2\AppData\Local\Microsoft\Windows\UsrClass.dat')"
-    IntOp $0 $0 + 1
-  ${Loop}
-!macroend
-!define MountRegistryIntoHKU "!insertmacro MountRegistryIntoHKU"
-!define un.MountRegistryIntoHKU "!insertmacro MountRegistryIntoHKU"
-
-; Unmounts all user ntuser.dat files into the registry as a subkey of HKU
-!macro UnmountRegistryIntoHKU
-  ; $0 is used as an index for HKEY_USERS enumeration
-  StrCpy $0 0
-  ${Do}
-    EnumRegKey $1 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" $0
-    ${If} $1 == ""
-      ${Break}
-    ${EndIf}
-    ReadRegStr $2 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$1" "ProfileImagePath"
-    System::Call "advapi32::RegUnLoadKey(i ${HKEY_USERS}, t 'User-$0')"
-    System::Call "advapi32::RegUnLoadKey(i ${HKEY_USERS}, t 'User-$0_Classes')"
-    IntOp $0 $0 + 1
-  ${Loop}
-!macroend
-!define UnmountRegistryIntoHKU "!insertmacro UnmountRegistryIntoHKU"
-!define un.UnmountRegistryIntoHKU "!insertmacro UnmountRegistryIntoHKU"
-
-; Unconditionally removes the delegate execute handler registration used to
-; launch the metro browser and misc. metro related registry values.
-!macro RemoveDEHRegistration DELEGATE_EXECUTE_HANDLER_ID \
-                             APP_USER_MODEL_ID \
-                             PROTOCOL_ACTIVATION_ID \
-                             FILE_ACTIVATION_ID
-  ${AcquireSERestoreName}
-  ${MountRegistryIntoHKU}
-
-  ; $0 is used as an index for HKEY_USERS enumeration
-  StrCpy $0 0
-
-  ${Do}
-    EnumRegKey $1 HKU "" $0
-    ${If} $1 == ""
-      ${Break}
-    ${EndIf}
-
-    ClearErrors
-    ${WordFind} "$1" "_Classes" "E#" $3
-    ${Unless} ${Errors}
-      ; remove the app user model id root registration. We don't need this
-      ; here anymore, we just use it for tray registrationdown in widget,
-      ; which we read out of the mozilla keys.
-      ${If} "${APP_USER_MODEL_ID}" != ""
-        ; The removal of this key intermittently fails, so do the best we can in cleanup
-        DeleteRegValue HKU "$1\${APP_USER_MODEL_ID}\.exe\shell\open\command" "DelegateExecute"
-        DeleteRegKey HKU "$1\${APP_USER_MODEL_ID}\.exe\shell\open"
-        DeleteRegKey HKU "$1\${APP_USER_MODEL_ID}\.exe\shell"
-        DeleteRegKey HKU "$1\${APP_USER_MODEL_ID}\.exe"
-        DeleteRegKey HKU "$1\\${APP_USER_MODEL_ID}"
-      ${EndIf}
-      ;
-      ; Remove delegate execute handler clsid registration
-      DeleteRegKey HKU "$1\CLSID\${DELEGATE_EXECUTE_HANDLER_ID}"
-
-      ; Remove protocol and file delegate execute handler id assoc
-      DeleteRegValue HKU "$1\${PROTOCOL_ACTIVATION_ID}" "AppUserModelID"
-      DeleteRegValue HKU "$1\${FILE_ACTIVATION_ID}" "AppUserModelID"
-
-      ; Remove delegate execute application registry keys
-      DeleteRegKey HKU "$1\${PROTOCOL_ACTIVATION_ID}\Application"
-      DeleteRegKey HKU "$1\${FILE_ACTIVATION_ID}\Application"
-
-      ; Remove misc. shell open info
-      DeleteRegValue HKU "$1\${PROTOCOL_ACTIVATION_ID}\shell\open" "CommandId"
-      DeleteRegValue HKU "$1\${FILE_ACTIVATION_ID}\shell\open" "CommandId"
-      DeleteRegValue HKU "$1\${PROTOCOL_ACTIVATION_ID}\shell\open\command" "DelegateExecute"
-      DeleteRegValue HKU "$1\${FILE_ACTIVATION_ID}\shell\open\command" "DelegateExecute"
-
-      ; remove metro browser splash image data
-      DeleteRegKey HKU "$1\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData\DefaultBrowser_NOPUBLISHERID\SplashScreen\DefaultBrowser_NOPUBLISHERID!${APP_USER_MODEL_ID}"
-    ${Else}
-      ; misc. Metro keys
-      DeleteRegKey HKU "$1\Software\Mozilla\Firefox\Metro"
-      DeleteRegValue HKU "$1\Software\Mozilla\Firefox" "CEHDump"
-      DeleteRegValue HKU "$1\Software\Mozilla\Firefox" "MetroD3DAvailable"
-      DeleteRegValue HKU "$1\Software\Mozilla\Firefox" "MetroLastAHE"
-      ${ResetWin8PromptKeys} "HKU" "$1\"
-    ${EndIf}
-    IntOp $0 $0 + 1
-  ${Loop}
-  ${UnmountRegistryIntoHKU}
-
-  ; The removal of this key intermittently fails, so do the best we can in cleanup
-  ${If} "${APP_USER_MODEL_ID}" != ""
-    DeleteRegValue HKLM "Software\Classes\${APP_USER_MODEL_ID}\.exe\shell\open\command" "DelegateExecute"
-    DeleteRegKey HKLM "Software\Classes\${APP_USER_MODEL_ID}\.exe\shell\open"
-    DeleteRegKey HKLM "Software\Classes\${APP_USER_MODEL_ID}\.exe\shell"
-    DeleteRegKey HKLM "Software\Classes\${APP_USER_MODEL_ID}\.exe"
-    DeleteRegKey HKLM "Software\Classes\${APP_USER_MODEL_ID}"
-  ${EndIf}
-
-  ; Remove HKLM entries
-  DeleteRegKey HKLM "Software\Classes\CLSID\${DELEGATE_EXECUTE_HANDLER_ID}"
-  DeleteRegKey HKLM "Software\Classes\${PROTOCOL_ACTIVATION_ID}\Application"
-  DeleteRegKey HKLM "Software\Classes\${FILE_ACTIVATION_ID}\Application"
-  DeleteRegValue HKLM "Software\Classes\${PROTOCOL_ACTIVATION_ID}\shell\open\command" "DelegateExecute"
-  DeleteRegValue HKLM "Software\Classes\${FILE_ACTIVATION_ID}\shell\open\command" "DelegateExecute"
-  DeleteRegValue HKLM "Software\Classes\${PROTOCOL_ACTIVATION_ID}" "AppUserModelID"
-  DeleteRegValue HKLM "Software\Classes\${FILE_ACTIVATION_ID}" "AppUserModelID"
-  DeleteRegValue HKLM "Software\Classes\${PROTOCOL_ACTIVATION_ID}\shell\open" "CommandId"
-  DeleteRegValue HKLM "Software\Classes\${FILE_ACTIVATION_ID}\shell\open" "CommandId"
-
-  ClearErrors
-!macroend
-
-!define RemoveDEHRegistration "!insertmacro RemoveDEHRegistration"
-!define un.RemoveDEHRegistration "!insertmacro RemoveDEHRegistration"
-
 ; Removes various directories and files for reasons noted below.
 !macro RemoveDeprecatedFiles
-  ; Some users are ending up with unpacked chrome instead of omni.ja. This
-  ; causes Firefox to break badly after upgrading from Firefox 31, see bug
-  ; 1063052. Removing the chrome.manifest from the install directory causes
-  ; Firefox to use the updated omni.ja so it won't crash.
-  ${If} ${FileExists} "$INSTDIR\chrome.manifest"
-    Delete "$INSTDIR\chrome.manifest"
-  ${EndIf}
-
   ; Remove talkback if it is present (remove after bug 386760 is fixed)
   ${If} ${FileExists} "$INSTDIR\extensions\talkback@mozilla.org"
     RmDir /r /REBOOTOK "$INSTDIR\extensions\talkback@mozilla.org"
@@ -1272,15 +876,15 @@ FunctionEnd
           ${If} $5 == ""
             ${Break}
           ${EndIf}
-          ${If} $5 == 233 ; ansi é
+          ${If} $5 == 233 ; ansi ??
             StrCpy $0 "1"
             FileWriteByte $4 195
             FileWriteByte $4 169
-          ${ElseIf} $5 == 241 ; ansi ñ
+          ${ElseIf} $5 == 241 ; ansi ??
             StrCpy $0 "1"
             FileWriteByte $4 195
             FileWriteByte $4 177
-          ${ElseIf} $5 == 252 ; ansi ü
+          ${ElseIf} $5 == 252 ; ansi ??
             StrCpy $0 "1"
             FileWriteByte $4 195
             FileWriteByte $4 188
@@ -1324,7 +928,7 @@ FunctionEnd
       ${If} ${AtLeastWin7}
         ; No need to check the default on Win8 and later
         ${If} ${AtMostWin2008R2}
-          ; Check if the Firefox is the http handler for this user
+          ; Check if Pale Moon is the http handler for this user
           SetShellVarContext current ; Set SHCTX to the current user
           ${IsHandlerForInstallDir} "http" $R9
           ${If} $TmpVal == "HKLM"
@@ -1553,79 +1157,11 @@ FunctionEnd
   Push "nspr4.dll"
   Push "nssdbm3.dll"
   Push "mozsqlite3.dll"
-  Push "sandboxbroker.dll"
   Push "xpcom.dll"
-  Push "crashreporter.exe"
   Push "updater.exe"
   Push "${FileMainEXE}"
 !macroend
 !define PushFilesToCheck "!insertmacro PushFilesToCheck"
-
-
-; Pushes the string "true" to the top of the stack if the Firewall service is
-; running and pushes the string "false" to the top of the stack if it isn't.
-!define SC_MANAGER_ALL_ACCESS 0x3F
-!define SERVICE_QUERY_CONFIG 0x0001
-!define SERVICE_QUERY_STATUS 0x0004
-!define SERVICE_RUNNING 0x4
-
-!macro IsFirewallSvcRunning
-  Push $R9
-  Push $R8
-  Push $R7
-  Push $R6
-  Push "false"
-
-  System::Call 'advapi32::OpenSCManagerW(n, n, i ${SC_MANAGER_ALL_ACCESS}) i.R6'
-  ${If} $R6 != 0
-    ; MpsSvc is the Firewall service on Windows Vista and above.
-    ; When opening the service with SERVICE_QUERY_CONFIG the return value will
-    ; be 0 if the service is not installed.
-    System::Call 'advapi32::OpenServiceW(i R6, t "MpsSvc", i ${SERVICE_QUERY_CONFIG}) i.R7'
-    ${If} $R7 != 0
-      System::Call 'advapi32::CloseServiceHandle(i R7) n'
-      ; Open the service with SERVICE_QUERY_CONFIG so its status can be queried.
-      System::Call 'advapi32::OpenServiceW(i R6, t "MpsSvc", i ${SERVICE_QUERY_STATUS}) i.R7'
-    ${Else}
-      ; SharedAccess is the Firewall service on Windows XP.
-      ; When opening the service with SERVICE_QUERY_CONFIG the return value will
-      ; be 0 if the service is not installed.
-      System::Call 'advapi32::OpenServiceW(i R6, t "SharedAccess", i ${SERVICE_QUERY_CONFIG}) i.R7'
-      ${If} $R7 != 0
-        System::Call 'advapi32::CloseServiceHandle(i R7) n'
-        ; Open the service with SERVICE_QUERY_CONFIG so its status can be
-        ; queried.
-        System::Call 'advapi32::OpenServiceW(i R6, t "SharedAccess", i ${SERVICE_QUERY_STATUS}) i.R7'
-      ${EndIf}
-    ${EndIf}
-    ; Did the calls to OpenServiceW succeed?
-    ${If} $R7 != 0
-      System::Call '*(i,i,i,i,i,i,i) i.R9'
-      ; Query the current status of the service.
-      System::Call 'advapi32::QueryServiceStatus(i R7, i $R9) i'
-      System::Call '*$R9(i, i.R8)'
-      System::Free $R9
-      System::Call 'advapi32::CloseServiceHandle(i R7) n'
-      IntFmt $R8 "0x%X" $R8
-      ${If} $R8 == ${SERVICE_RUNNING}
-        Pop $R9
-        Push "true"
-      ${EndIf}
-    ${EndIf}
-    System::Call 'advapi32::CloseServiceHandle(i R6) n'
-  ${EndIf}
-
-  Exch 1
-  Pop $R6
-  Exch 1
-  Pop $R7
-  Exch 1
-  Pop $R8
-  Exch 1
-  Pop $R9
-!macroend
-!define IsFirewallSvcRunning "!insertmacro IsFirewallSvcRunning"
-!define un.IsFirewallSvcRunning "!insertmacro IsFirewallSvcRunning"
 
 ; Sets this installation as the default browser by setting the registry keys
 ; under HKEY_CURRENT_USER via registry calls and using the AppAssocReg NSIS
@@ -1660,7 +1196,6 @@ Function SetAsDefaultAppUserHKCU
     ${SetStartMenuInternet} "HKCU"
     ${FixShellIconHandler} "HKCU"
     ${FixClassKeys} ; Does not use SHCTX
-    Call RegisterStartMenuTile
   ${EndIf}
 
   ${SetHandlers}
@@ -1687,15 +1222,6 @@ Function FixShortcutAppModelIDs
   ${If} ${AtLeastWin7}
   ${AndIf} "$AppUserModelID" != ""
     ${UpdateShortcutAppModelIDs} "$INSTDIR\${FileMainEXE}" "$AppUserModelID" $0
-  ${EndIf}
-FunctionEnd
-
-; Helper for adding Firewall exceptions during install and after app update.
-Function AddFirewallEntries
-  ${IsFirewallSvcRunning}
-  Pop $0
-  ${If} "$0" == "true"
-    liteFirewallW::AddRule "$INSTDIR\${FileMainEXE}" "${BrandShortName} ($INSTDIR)"
   ${EndIf}
 FunctionEnd
 
@@ -1785,4 +1311,4 @@ Function SetAsDefaultAppUser
 FunctionEnd
 !define SetAsDefaultAppUser "Call SetAsDefaultAppUser"
 
-!endif ; NO_LOG
+!endif

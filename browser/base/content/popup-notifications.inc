@@ -8,6 +8,53 @@
            orient="vertical"
            role="alert"/>
 
+    <!-- Popup for site identity information -->
+    <panel id="identity-popup"
+           type="arrow"
+           hidden="true"
+           noautofocus="true"
+           consumeoutsideclicks="true"
+           onpopupshown="gIdentityHandler.onPopupShown(event);"
+           level="top">
+      <hbox id="identity-popup-container" align="top">
+        <image id="identity-popup-icon"/>
+        <vbox id="identity-popup-content-box">
+          <label id="identity-popup-connectedToLabel"
+                 class="identity-popup-label"
+                 value="&identity.connectedTo;"/>
+          <label id="identity-popup-connectedToLabel2"
+                 class="identity-popup-label"
+                 value="&identity.unverifiedsite2;"/>
+          <description id="identity-popup-content-host"
+                       class="identity-popup-description"/>
+          <label id="identity-popup-runByLabel"
+                 class="identity-popup-label"
+                 value="&identity.runBy;"/>
+          <description id="identity-popup-content-owner"
+                       class="identity-popup-description"/>
+          <description id="identity-popup-content-supplemental"
+                       class="identity-popup-description"/>
+          <description id="identity-popup-content-verifier"
+                       class="identity-popup-description"/>
+          <hbox id="identity-popup-encryption" flex="1">
+            <vbox>
+              <image id="identity-popup-encryption-icon"/>
+            </vbox>
+            <description id="identity-popup-encryption-label" flex="1"
+                         class="identity-popup-description"/>
+          </hbox>
+          <!-- Footer button to open security page info -->
+          <hbox id="identity-popup-button-container" pack="end">
+            <button id="identity-popup-more-info-button"
+                    label="&identity.moreInfoLinkText;"
+                    onblur="gIdentityHandler.hideIdentityPopup();"
+                    oncommand="gIdentityHandler.handleMoreInfoClick(event);"/>
+          </hbox>
+        </vbox>
+      </hbox>
+    </panel>
+
+
     <popupnotification id="webRTC-shareDevices-notification" hidden="true">
       <popupnotificationcontent id="webRTC-selectCamera" orient="vertical">
         <separator class="thin"/>
@@ -18,18 +65,6 @@
           <menupopup id="webRTC-selectCamera-menupopup"/>
         </menulist>
       </popupnotificationcontent>
-
-      <popupnotificationcontent id="webRTC-selectWindowOrScreen" orient="vertical">
-        <separator class="thin"/>
-        <label id="webRTC-selectWindow-label"
-               control="webRTC-selectWindow-menulist"/>
-        <menulist id="webRTC-selectWindow-menulist"
-                  oncommand="gWebRTCUI.updateMainActionLabel(this);">
-          <menupopup id="webRTC-selectWindow-menupopup"/>
-        </menulist>
-        <description id="webRTC-all-windows-shared" hidden="true">&getUserMedia.allWindowsShared.message;</description>
-      </popupnotificationcontent>
-
       <popupnotificationcontent id="webRTC-selectMicrophone" orient="vertical">
         <separator class="thin"/>
         <label value="&getUserMedia.selectMicrophone.label;"
@@ -41,27 +76,33 @@
       </popupnotificationcontent>
     </popupnotification>
 
-    <popupnotification id="webapps-install-progress-notification" hidden="true">
-      <popupnotificationcontent id="webapps-install-progress-content" orient="vertical" align="start">
+    <popupnotification id="geolocation-notification" hidden="true">
+      <popupnotificationcontent orient="vertical" align="start">
         <separator class="thin"/>
+        <label id="geolocation-learnmore-link" class="text-link"/>
       </popupnotificationcontent>
     </popupnotification>
 
     <popupnotification id="servicesInstall-notification" hidden="true">
       <popupnotificationcontent orient="vertical" align="start">
-        <!-- XXX bug 974146, tests are looking for this, can't remove yet. -->
+        <separator class="thin"/>
+        <label id="servicesInstall-learnmore-link" class="text-link"/>
       </popupnotificationcontent>
     </popupnotification>
 
     <popupnotification id="pointerLock-notification" hidden="true">
       <popupnotificationcontent orient="vertical" align="start">
         <separator class="thin"/>
-        <label id="pointerLock-cancel">&pointerLock.notification.message;</label>
+        <label id="pointerLock-cancel" value="&pointerLock.notification.message;"/>
       </popupnotificationcontent>
     </popupnotification>
 
-#ifdef E10S_TESTING_ONLY
-    <popupnotification id="enable-e10s-notification" hidden="true">
-      <popupnotificationcontent orient="vertical"/>
+    <popupnotification id="mixed-content-blocked-notification" hidden="true">
+      <popupnotificationcontent orient="vertical" align="start">
+        <separator/>
+        <description id="mixed-content-blocked-moreinfo">&mixedContentBlocked.moreinfo;</description>
+        <separator/>
+        <label id="mixed-content-blocked-helplink" class="text-link"
+               value="&mixedContentBlocked.helplink;"/>
+      </popupnotificationcontent>
     </popupnotification>
-#endif

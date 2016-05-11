@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Cu = Components.utils;
-Cu.import("resource://gre/modules/LoadContextInfo.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
 //******** define a js object to implement nsITreeView
 function pageInfoTreeView(treeid, copycol)
 {
@@ -187,7 +183,7 @@ gImageView.onPageMediaSort = function(columnname) {
   var treecol = tree.columns.getNamedColumn(columnname);
 
   var comparator;
-  if (treecol.index == COL_IMAGE_SIZE || treecol.index == COL_IMAGE_COUNT) {
+  if (treecol.index == COL_IMAGE_SIZE) {
     comparator = function numComparator(a, b) { return a - b; };
   } else {
     comparator = function textComparator(a, b) { return a.toLowerCase().localeCompare(b.toLowerCase()); };
@@ -220,15 +216,13 @@ const ATOM_CONTRACTID           = "@mozilla.org/atom-service;1";
 
 // a number of services I'll need later
 // the cache services
-const nsICacheStorageService = Components.interfaces.nsICacheStorageService;
-const nsICacheStorage = Components.interfaces.nsICacheStorage;
-const cacheService = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"].getService(nsICacheStorageService);
-
-var loadContextInfo = LoadContextInfo.fromLoadContext(
-  window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-        .getInterface(Components.interfaces.nsIWebNavigation)
-        .QueryInterface(Components.interfaces.nsILoadContext), false);
-var diskStorage = cacheService.diskCacheStorage(loadContextInfo, false);
+const nsICacheService = Components.interfaces.nsICacheService;
+const ACCESS_READ     = Components.interfaces.nsICache.ACCESS_READ;
+const cacheService = Components.classes["@mozilla.org/network/cache-service;1"].getService(nsICacheService);
+var httpCacheSession = cacheService.createSession("HTTP", 0, true);
+httpCacheSession.doomEntriesIfExpired = false;
+var ftpCacheSession = cacheService.createSession("FTP", 0, true);
+ftpCacheSession.doomEntriesIfExpired = false;
 
 const nsICookiePermission  = Components.interfaces.nsICookiePermission;
 const nsIPermissionManager = Components.interfaces.nsIPermissionManager;
@@ -237,14 +231,12 @@ const nsICertificateDialogs = Components.interfaces.nsICertificateDialogs;
 const CERTIFICATEDIALOGS_CONTRACTID = "@mozilla.org/nsCertificateDialogs;1"
 
 // clipboard helper
-function getClipboardHelper() {
-    try {
-        return Components.classes["@mozilla.org/widget/clipboardhelper;1"].getService(Components.interfaces.nsIClipboardHelper);
-    } catch(e) {
-        // do nothing, later code will handle the error
-    }
+try {
+  const gClipboardHelper = Components.classes["@mozilla.org/widget/clipboardhelper;1"].getService(Components.interfaces.nsIClipboardHelper);
 }
-const gClipboardHelper = getClipboardHelper();
+catch(e) {
+  // do nothing, later code will handle the error
+}
 
 // Interface for image loading content
 const nsIImageLoadingContent = Components.interfaces.nsIImageLoadingContent;
@@ -325,7 +317,7 @@ function onLoadPageInfo()
              window.arguments[0];
 
   if (!args || !args.doc) {
-    gWindow = window.opener.gBrowser.selectedBrowser.contentWindowAsCPOW;
+    gWindow = window.opener.content;
     gDocument = gWindow.document;
   }
 
@@ -444,6 +436,14 @@ function loadTab(args)
   radioGroup.focus();
 }
 
+function onClickMore()
+{
+  var radioGrp = document.getElementById("viewGroup");
+  var radioElt = document.getElementById("securityTab");
+  radioGrp.selectedItem = radioElt;
+  showTab('security');
+}
+
 function toggleGroupbox(id)
 {
   var elt = document.getElementById(id);
@@ -463,15 +463,19 @@ function toggleGroupbox(id)
 
 function openCacheEntry(key, cb)
 {
+  var tries = 0;
   var checkCacheListener = {
-    onCacheEntryCheck: function(entry, appCache) {
-      return Components.interfaces.nsICacheEntryOpenCallback.ENTRY_WANTED;
-    },
-    onCacheEntryAvailable: function(entry, isNew, appCache, status) {
-      cb(entry);
+    onCacheEntryAvailable: function(entry, access, status) {
+      if (entry || tries == 1) {
+        cb(entry);
+      }
+      else {
+        tries++;
+        ftpCacheSession.asyncOpenCacheEntry(key, ACCESS_READ, this, true);
+      }
     }
   };
-  diskStorage.asyncOpenURI(Services.io.newURI(key, null, null), "", nsICacheStorage.OPEN_READONLY, checkCacheListener);
+  httpCacheSession.asyncOpenCacheEntry(key, ACCESS_READ, checkCacheListener, true);
 }
 
 function makeGeneralTab()
@@ -510,7 +514,7 @@ function makeGeneralTab()
     else
       metaTagsCaption.label = gBundle.getFormattedString("generalMetaTags", [length]);
     var metaTree = document.getElementById("metatree");
-    metaTree.view = gMetaView;
+    metaTree.treeBoxObject.view = gMetaView;
 
     for (var i = 0; i < length; i++)
       gMetaView.addRow([metaNodes[i].name || metaNodes[i].httpEquiv, metaNodes[i].content]);

@@ -92,18 +92,18 @@ OpenKeyForReading(HKEY aKeyRoot, const nsAString& aKeyName, HKEY* aKey)
 //    .htm .html .shtml .xht .xhtml 
 //   are mapped like so:
 //
-//   HKCU\SOFTWARE\Classes\.<ext>\      (default)         REG_SZ     FirefoxHTML
+//   HKCU\SOFTWARE\Classes\.<ext>\      (default)         REG_SZ     PaleMoonHTML
 //
 //   as aliases to the class:
 //
-//   HKCU\SOFTWARE\Classes\FirefoxHTML\
+//   HKCU\SOFTWARE\Classes\PaleMoonHTML\
 //     DefaultIcon                      (default)         REG_SZ     <apppath>,1
 //     shell\open\command               (default)         REG_SZ     <apppath> -osint -url "%1"
 //     shell\open\ddeexec               (default)         REG_SZ     <empty string>
 //
 // - Windows Vista and above Protocol Handler
 //
-//   HKCU\SOFTWARE\Classes\FirefoxURL\  (default)         REG_SZ     <appname> URL
+//   HKCU\SOFTWARE\Classes\PaleMoonURL\  (default)         REG_SZ     <appname> URL
 //                                      EditFlags         REG_DWORD  2
 //                                      FriendlyTypeName  REG_SZ     <appname> URL
 //     DefaultIcon                      (default)         REG_SZ     <apppath>,1
@@ -123,7 +123,7 @@ OpenKeyForReading(HKEY aKeyRoot, const nsAString& aKeyName, HKEY* aKey)
 //
 // - Windows Start Menu (XP SP1 and newer)
 //   -------------------------------------------------
-//   The following keys are set to make Firefox appear in the Start Menu as the
+//   The following keys are set to make PaleMoon appear in the Start Menu as the
 //   browser:
 //   
 //   HKCU\SOFTWARE\Clients\StartMenuInternet\FIREFOX.EXE\
@@ -147,7 +147,7 @@ typedef struct {
   const char* oldValueData;
 } SETTING;
 
-#define APP_REG_NAME L"Firefox"
+#define APP_REG_NAME L"Pale Moon"
 #define VAL_FILE_ICON "%APPPATH%,1"
 #define VAL_OPEN "\"%APPPATH%\" -osint -url \"%1\""
 #define OLD_VAL_OPEN "\"%APPPATH%\" -requestPending -osint -url \"%1\""
@@ -161,11 +161,11 @@ typedef struct {
   PREFIX MID
 
 // The DefaultIcon registry key value should never be used when checking if
-// Firefox is the default browser for file handlers since other applications
+// PaleMoon is the default browser for file handlers since other applications
 // (e.g. MS Office) may modify the DefaultIcon registry key value to add Icon
 // Handlers. see http://msdn2.microsoft.com/en-us/library/aa969357.aspx for
 // more info. The FTP protocol is not checked so advanced users can set the FTP
-// handler to another application and still have Firefox check if it is the
+// handler to another application and still have PaleMoon check if it is the
 // default HTTP and HTTPS handler.
 // *** Do not add additional checks here unless you skip them when aForAllTypes
 // is false below***.
@@ -173,10 +173,10 @@ static SETTING gSettings[] = {
   // File Handler Class
   // ***keep this as the first entry because when aForAllTypes is not set below
   // it will skip over this check.***
-  { MAKE_KEY_NAME1("FirefoxHTML", SOC), VAL_OPEN, OLD_VAL_OPEN },
+  { MAKE_KEY_NAME1("PaleMoonHTML", SOC), VAL_OPEN, OLD_VAL_OPEN },
 
   // Protocol Handler Class - for Vista and above
-  { MAKE_KEY_NAME1("FirefoxURL", SOC), VAL_OPEN, OLD_VAL_OPEN },
+  { MAKE_KEY_NAME1("PaleMoonURL", SOC), VAL_OPEN, OLD_VAL_OPEN },
 
   // Protocol Handlers
   { MAKE_KEY_NAME1("HTTP", DI), VAL_FILE_ICON },
@@ -186,14 +186,14 @@ static SETTING gSettings[] = {
 };
 
 // The settings to disable DDE are separate from the default browser settings
-// since they are only checked when Firefox is the default browser and if they
+// since they are only checked when PaleMoon is the default browser and if they
 // are incorrect they are fixed without notifying the user.
 static SETTING gDDESettings[] = {
   // File Handler Class
-  { MAKE_KEY_NAME1("Software\\Classes\\FirefoxHTML", SOD) },
+  { MAKE_KEY_NAME1("Software\\Classes\\PaleMoonHTML", SOD) },
 
   // Protocol Handler Class - for Vista and above
-  { MAKE_KEY_NAME1("Software\\Classes\\FirefoxURL", SOD) },
+  { MAKE_KEY_NAME1("Software\\Classes\\PaleMoonURL", SOD) },
 
   // Protocol Handlers
   { MAKE_KEY_NAME1("Software\\Classes\\FTP", SOD) },
@@ -275,15 +275,20 @@ nsWindowsShellService::ShortcutMaintenance()
     return NS_ERROR_UNEXPECTED;
 
   NS_NAMED_LITERAL_CSTRING(prefName, "browser.taskbar.lastgroupid");
-  nsCOMPtr<nsIPrefBranch> prefs =
+  nsCOMPtr<nsIPrefService> prefs =
     do_GetService(NS_PREFSERVICE_CONTRACTID);
   if (!prefs)
     return NS_ERROR_UNEXPECTED;
 
+  nsCOMPtr<nsIPrefBranch> prefBranch;
+  prefs->GetBranch(nullptr, getter_AddRefs(prefBranch));
+  if (!prefBranch)
+    return NS_ERROR_UNEXPECTED;
+
   nsCOMPtr<nsISupportsString> prefString;
-  rv = prefs->GetComplexValue(prefName.get(),
-                              NS_GET_IID(nsISupportsString),
-                              getter_AddRefs(prefString));
+  rv = prefBranch->GetComplexValue(prefName.get(),
+                                   NS_GET_IID(nsISupportsString),
+                                   getter_AddRefs(prefString));
   if (NS_SUCCEEDED(rv)) {
     nsAutoString version;
     prefString->GetData(version);
@@ -299,9 +304,9 @@ nsWindowsShellService::ShortcutMaintenance()
     return rv;
 
   prefString->SetData(appId);
-  rv = prefs->SetComplexValue(prefName.get(),
-                              NS_GET_IID(nsISupportsString),
-                              prefString);
+  rv = prefBranch->SetComplexValue(prefName.get(),
+                                   NS_GET_IID(nsISupportsString),
+                                   prefString);
   if (NS_FAILED(rv)) {
     NS_WARNING("Couldn't set last user model id!");
     return NS_ERROR_UNEXPECTED;
@@ -325,7 +330,7 @@ IsAARDefaultHTTP(IApplicationAssociationRegistration* pAAR,
   HRESULT hr = pAAR->QueryCurrentDefault(L"http", AT_URLPROTOCOL, AL_EFFECTIVE,
                                          &registeredApp);
   if (SUCCEEDED(hr)) {
-    LPCWSTR firefoxHTTPProgID = L"FirefoxURL";
+    LPCWSTR firefoxHTTPProgID = L"PaleMoonURL";
     *aIsDefaultBrowser = !wcsicmp(registeredApp, firefoxHTTPProgID);
     CoTaskMemFree(registeredApp);
   } else {
@@ -342,7 +347,7 @@ IsAARDefaultHTML(IApplicationAssociationRegistration* pAAR,
   HRESULT hr = pAAR->QueryCurrentDefault(L".html", AT_FILEEXTENSION, AL_EFFECTIVE,
                                          &registeredApp);
   if (SUCCEEDED(hr)) {
-    LPCWSTR firefoxHTMLProgID = L"FirefoxHTML";
+    LPCWSTR firefoxHTMLProgID = L"PaleMoonHTML";
     *aIsDefaultBrowser = !wcsicmp(registeredApp, firefoxHTMLProgID);
     CoTaskMemFree(registeredApp);
   } else {
@@ -353,9 +358,9 @@ IsAARDefaultHTML(IApplicationAssociationRegistration* pAAR,
 
 /*
  * Query's the AAR for the default status.
- * This only checks for FirefoxURL and if aCheckAllTypes is set, then
- * it also checks for FirefoxHTML.  Note that those ProgIDs are shared
- * by all Firefox browsers.
+ * This only checks for PaleMoonURL and if aCheckAllTypes is set, then
+ * it also checks for PaleMoonHTML.  Note that those ProgIDs are shared
+ * by all PaleMoon browsers.
 */
 bool
 nsWindowsShellService::IsDefaultBrowserVista(bool aCheckAllTypes,
@@ -414,7 +419,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
     return NS_ERROR_FAILURE;
 
   // Convert the path to a long path since GetModuleFileNameW returns the path
-  // that was used to launch Firefox which is not necessarily a long path.
+  // that was used to launch PaleMoon which is not necessarily a long path.
   if (!::GetLongPathNameW(exePath, exePath, MAX_BUF))
     return NS_ERROR_FAILURE;
 
@@ -467,7 +472,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
                             0, KEY_SET_VALUE, &theKey);
       if (REG_FAILED(res)) {
         // If updating the open command fails try to update it using the helper
-        // application when setting Firefox as the default browser.
+        // application when setting PaleMoon as the default browser.
         *aIsDefaultBrowser = false;
         return NS_OK;
       }
@@ -480,23 +485,23 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
       ::RegCloseKey(theKey);
       if (REG_FAILED(res)) {
         // If updating the open command fails try to update it using the helper
-        // application when setting Firefox as the default browser.
+        // application when setting PaleMoon as the default browser.
         *aIsDefaultBrowser = false;
         return NS_OK;
       }
     }
   }
 
-  // Only check if Firefox is the default browser on Vista and above if the
-  // previous checks show that Firefox is the default browser.
+  // Only check if PaleMoon is the default browser on Vista and above if the
+  // previous checks show that PaleMoon is the default browser.
   if (*aIsDefaultBrowser) {
     IsDefaultBrowserVista(aForAllTypes, aIsDefaultBrowser);
   }
 
   // To handle the case where DDE isn't disabled due for a user because there
-  // account didn't perform a Firefox update this will check if Firefox is the
+  // account didn't perform a PaleMoon update this will check if PaleMoon is the
   // default browser and if dde is disabled for each handler
-  // and if it isn't disable it. When Firefox is not the default browser the
+  // and if it isn't disable it. When PaleMoon is not the default browser the
   // helper application will disable dde for each handler.
   if (*aIsDefaultBrowser && aForAllTypes) {
     // Check ftp settings
@@ -510,7 +515,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
       if (NS_FAILED(rv)) {
         ::RegCloseKey(theKey);
         // If disabling DDE fails try to disable it using the helper
-        // application when setting Firefox as the default browser.
+        // application when setting PaleMoon as the default browser.
         *aIsDefaultBrowser = false;
         return NS_OK;
       }
@@ -531,7 +536,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
                                 nullptr, &theKey, nullptr);
         if (REG_FAILED(res)) {
           // If disabling DDE fails try to disable it using the helper
-          // application when setting Firefox as the default browser.
+          // application when setting PaleMoon as the default browser.
           *aIsDefaultBrowser = false;
           return NS_OK;
         }
@@ -542,7 +547,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
         ::RegCloseKey(theKey);
         if (REG_FAILED(res)) {
           // If disabling DDE fails try to disable it using the helper
-          // application when setting Firefox as the default browser.
+          // application when setting PaleMoon as the default browser.
           *aIsDefaultBrowser = false;
           return NS_OK;
         }
@@ -585,7 +590,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
     // Close the key that was created.
     ::RegCloseKey(theKey);
     // If updating the FTP protocol handlers shell open command fails try to
-    // update it using the helper application when setting Firefox as the
+    // update it using the helper application when setting PaleMoon as the
     // default browser.
     if (REG_FAILED(res)) {
       *aIsDefaultBrowser = false;
@@ -702,11 +707,6 @@ nsWindowsShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers)
     }
   }
 
-  nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (prefs) {
-    (void) prefs->SetBoolPref(PREF_CHECKDEFAULTBROWSER, true);
-  }
-
   return rv;
 }
 
@@ -722,11 +722,13 @@ nsWindowsShellService::GetShouldCheckDefaultBrowser(bool* aResult)
     return NS_OK;
   }
 
+  nsCOMPtr<nsIPrefBranch> prefs;
   nsresult rv;
-  nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID, &rv));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsCOMPtr<nsIPrefService> pserve(do_GetService(NS_PREFSERVICE_CONTRACTID, &rv));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = pserve->GetBranch("", getter_AddRefs(prefs));
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return prefs->GetBoolPref(PREF_CHECKDEFAULTBROWSER, aResult);
 }
@@ -734,11 +736,14 @@ nsWindowsShellService::GetShouldCheckDefaultBrowser(bool* aResult)
 NS_IMETHODIMP
 nsWindowsShellService::SetShouldCheckDefaultBrowser(bool aShouldCheck)
 {
+  nsCOMPtr<nsIPrefBranch> prefs;
   nsresult rv;
-  nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID, &rv));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+
+  nsCOMPtr<nsIPrefService> pserve(do_GetService(NS_PREFSERVICE_CONTRACTID, &rv));
+  NS_ENSURE_SUCCESS(rv, rv);
+  
+  rv = pserve->GetBranch("", getter_AddRefs(prefs));
+  NS_ENSURE_SUCCESS(rv, rv);
 
   return prefs->SetBoolPref(PREF_CHECKDEFAULTBROWSER, aShouldCheck);
 }
@@ -884,7 +889,7 @@ nsWindowsShellService::SetDesktopBackground(nsIDOMElement* aElement,
                               getter_AddRefs(file));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // eventually, the path is "%APPDATA%\Mozilla\Firefox\Desktop Background.bmp"
+  // eventually, the path is "%APPDATA%\Mozilla\PaleMoon\Desktop Background.bmp"
   rv = file->Append(fileLeafName);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -910,24 +915,24 @@ nsWindowsShellService::SetDesktopBackground(nsIDOMElement* aElement,
     nsAutoString style;
     switch (aPosition) {
       case BACKGROUND_TILE:
-        style.Assign('0');
-        tile.Assign('1');
+        style.AssignLiteral("0");
+        tile.AssignLiteral("1");
         break;
       case BACKGROUND_CENTER:
-        style.Assign('0');
-        tile.Assign('0');
+        style.AssignLiteral("0");
+        tile.AssignLiteral("0");
         break;
       case BACKGROUND_STRETCH:
-        style.Assign('2');
-        tile.Assign('0');
+        style.AssignLiteral("2");
+        tile.AssignLiteral("0");
         break;
       case BACKGROUND_FILL:
         style.AssignLiteral("10");
-        tile.Assign('0');
+        tile.AssignLiteral("0");
         break;
       case BACKGROUND_FIT:
-        style.Assign('6');
-        tile.Assign('0');
+        style.AssignLiteral("6");
+        tile.AssignLiteral("0");
         break;
     }
 
@@ -985,7 +990,7 @@ nsWindowsShellService::OpenApplication(int32_t aApplication)
   ::RegCloseKey(theKey);
 
   // Find the "open" command
-  application.Append('\\');
+  application.AppendLiteral("\\");
   application.Append(buf);
   application.AppendLiteral("\\shell\\open\\command");
 

@@ -10,6 +10,7 @@ const Cu = Components.utils;
 const Cr = Components.results;
 
 const kMainKey = "Software\\Microsoft\\Internet Explorer\\Main";
+const kRegMultiSz = 7;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
@@ -22,8 +23,6 @@ XPCOMUtils.defineLazyModuleGetter(this, "ctypes",
                                   "resource://gre/modules/ctypes.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "WindowsRegistry",
                                   "resource://gre/modules/WindowsRegistry.jsm");
-
-Cu.importGlobalProperties(["File"]);
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Helpers.
@@ -85,17 +84,15 @@ let CtypesHelpers = {
   },
 
   /**
-   * Converts a FILETIME struct (2 DWORDS), to a SYSTEMTIME struct,
-   * and then deduces the number of seconds since the epoch (which
-   * is the data we want for the cookie expiry date).
+   * Converts a FILETIME struct (2 DWORDS), to a SYSTEMTIME struct.
    *
    * @param aTimeHi
    *        Least significant DWORD.
    * @param aTimeLo
    *        Most significant DWORD.
-   * @return the number of seconds since the epoch
+   * @return a Date object representing the converted datetime.
    */
-  fileTimeToSecondsSinceEpoch(aTimeHi, aTimeLo) {
+  fileTimeToDate: function CH_fileTimeToDate(aTimeHi, aTimeLo) {
     let fileTime = this._structs.FILETIME();
     fileTime.dwLowDateTime = aTimeLo;
     fileTime.dwHighDateTime = aTimeHi;
@@ -105,15 +102,13 @@ let CtypesHelpers = {
     if (result == 0)
       throw new Error(ctypes.winLastError);
 
-    // System time is in UTC, so we use Date.UTC to get milliseconds from epoch,
-    // then divide by 1000 to get seconds, and round down:
-    return Math.floor(Date.UTC(systemTime.wYear,
-                               systemTime.wMonth - 1,
-                               systemTime.wDay,
-                               systemTime.wHour,
-                               systemTime.wMinute,
-                               systemTime.wSecond,
-                               systemTime.wMilliseconds) / 1000);
+    return new Date(systemTime.wYear,
+                    systemTime.wMonth - 1,
+                    systemTime.wDay,
+                    systemTime.wHour,
+                    systemTime.wMinute,
+                    systemTime.wSecond,
+                    systemTime.wMilliseconds);
   }
 };
 
@@ -192,52 +187,47 @@ Bookmarks.prototype = {
     let entries = aSourceFolder.directoryEntries;
     while (entries.hasMoreElements()) {
       let entry = entries.getNext().QueryInterface(Ci.nsIFile);
-      try {
-        // Make sure that entry.path == entry.target to not follow .lnk folder
-        // shortcuts which could lead to infinite cycles.
-        // Don't use isSymlink(), since it would throw for invalid
-        // lnk files pointing to URLs or to unresolvable paths.
-        if (entry.path == entry.target && entry.isDirectory()) {
-          let destFolderId;
-          if (entry.leafName == this._toolbarFolderName &&
-              entry.parent.equals(this._favoritesFolder)) {
-            // Import to the bookmarks toolbar.
-            destFolderId = PlacesUtils.toolbarFolderId;
-            if (!MigrationUtils.isStartupMigration) {
-              destFolderId =
-                MigrationUtils.createImportedBookmarksFolder("IE", destFolderId);
-            }
-          }
-          else {
-            // Import to a new folder.
-            destFolderId =
-              PlacesUtils.bookmarks.createFolder(aDestFolderId, entry.leafName,
-                                                 PlacesUtils.bookmarks.DEFAULT_INDEX);
-          }
 
-          if (entry.isReadable()) {
-            // Recursively import the folder.
-            this._migrateFolder(entry, destFolderId);
+      // Make sure that entry.path == entry.target to not follow .lnk folder
+      // shortcuts which could lead to infinite cycles.
+      if (entry.isDirectory() && entry.path == entry.target) {
+        let destFolderId;
+        if (entry.leafName == this._toolbarFolderName &&
+            entry.parent.equals(this._favoritesFolder)) {
+          // Import to the bookmarks toolbar.
+          destFolderId = PlacesUtils.toolbarFolderId;
+          if (!MigrationUtils.isStartupMigration) {
+            destFolderId =
+              MigrationUtils.createImportedBookmarksFolder("IE", destFolderId);
           }
         }
         else {
-          // Strip the .url extension, to both check this is a valid link file,
-          // and get the associated title.
-          let matches = entry.leafName.match(/(.+)\.url$/i);
-          if (matches) {
-            let fileHandler = Cc["@mozilla.org/network/protocol;1?name=file"].
-                              getService(Ci.nsIFileProtocolHandler);
-            let uri = fileHandler.readURLFile(entry);
-            let title = matches[1];
-
-            PlacesUtils.bookmarks.insertBookmark(aDestFolderId,
-                                                 uri,
-                                                 PlacesUtils.bookmarks.DEFAULT_INDEX,
-                                                 title);
-          }
+          // Import to a new folder.
+          destFolderId =
+            PlacesUtils.bookmarks.createFolder(aDestFolderId, entry.leafName,
+                                               PlacesUtils.bookmarks.DEFAULT_INDEX);
         }
-      } catch (ex) {
-        Components.utils.reportError("Unable to import IE favorite (" + entry.leafName + "): " + ex);
+
+        if (entry.isReadable()) {
+          // Recursively import the folder.
+          this._migrateFolder(entry, destFolderId);
+        }
+      }
+      else {
+        // Strip the .url extension, to both check this is a valid link file,
+        // and get the associated title.
+        let matches = entry.leafName.match(/(.+)\.url$/i);
+        if (matches) {
+          let fileHandler = Cc["@mozilla.org/network/protocol;1?name=file"].
+                            getService(Ci.nsIFileProtocolHandler);
+          let uri = fileHandler.readURLFile(entry);
+          let title = matches[1];
+
+          PlacesUtils.bookmarks.insertBookmark(aDestFolderId,
+                                               uri,
+                                               PlacesUtils.bookmarks.DEFAULT_INDEX,
+                                               title);
+        }
       }
     }
   }
@@ -384,7 +374,7 @@ Cookies.prototype = {
           } catch (ex) {}
         });
 
-        yield undefined;
+        yield;
       }
 
       CtypesHelpers.finalize();
@@ -416,7 +406,7 @@ Cookies.prototype = {
         aCallback(success);
       }
     }).bind(this), false);
-    fileReader.readAsText(new File(aFile));
+    fileReader.readAsText(File(aFile));
   },
 
   /**
@@ -450,7 +440,6 @@ Cookies.prototype = {
 
       let hostLen = hostpath.indexOf("/");
       let host = hostpath.substr(0, hostLen);
-      let path = hostpath.substr(hostLen);
 
       // For a non-null domain, assume it's what Mozilla considers
       // a domain cookie.  See bug 222343.
@@ -462,8 +451,9 @@ Cookies.prototype = {
           host = "." + host;
       }
 
-      let expireTime = CtypesHelpers.fileTimeToSecondsSinceEpoch(Number(expireTimeHi),
-                                                                 Number(expireTimeLo));
+      let path = hostpath.substr(hostLen);
+      let expireTime = CtypesHelpers.fileTimeToDate(Number(expireTimeHi),
+                                                    Number(expireTimeLo));
       Services.cookies.add(host,
                            path,
                            name,
@@ -537,8 +527,8 @@ Settings.prototype = {
               yesNoToBoolean);
     this._set("Software\\Microsoft\\Internet Explorer\\Settings",
               "Always Use My Colors",
-              "browser.display.document_color_use",
-              function (v) !Boolean(v) ? 0 : 2);
+              "browser.display.use_document_colors",
+              function (v) !Boolean(v));
     this._set("Software\\Microsoft\\Internet Explorer\\Settings",
               "Always Use My Font Face",
               "browser.display.use_document_fonts",

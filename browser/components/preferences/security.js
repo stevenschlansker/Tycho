@@ -1,4 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 4 -*- */
+/* -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -111,7 +111,7 @@ var gSecurityPane = {
   {
     document.documentElement.openWindow("Toolkit:PasswordManagerExceptions",
                                         "chrome://passwordmgr/content/passwordManagerExceptions.xul",
-                                        "resizable", null);
+                                        "", null);
   },
 
   /**
@@ -173,9 +173,6 @@ var gSecurityPane = {
       this.changeMasterPassword();
 
     this._initMasterPasswordUI();
-
-    // We might want to hide sync's password engine.
-    gSyncPane.updateWeavePrefs();
   },
 
   /**
@@ -221,7 +218,7 @@ var gSecurityPane = {
   {
     document.documentElement.openWindow("Toolkit:PasswordManager",
                                         "chrome://passwordmgr/content/passwordManager.xul",
-                                        "resizable", null);
+                                        "", null);
   }
 
 };

@@ -6,24 +6,24 @@
 
 DIRS += [
     'about',
-    'customizableui',
+    'certerror',
     'dirprovider',
     'downloads',
     'feeds',
-    'loop',
-    'migration',
     'places',
     'preferences',
     'privatebrowsing',
-    'readinglist',
     'search',
     'sessionstore',
     'shell',
-    'selfsupport',
-    'tabview',
-    'uitour',
-    'translation',
+    'migration',
 ]
+
+if CONFIG['MOZ_BROWSER_SIDEBAR']:
+    DIRS += ['sidebar']
+
+if CONFIG['MOZ_SAFE_BROWSING']:
+    DIRS += ['safebrowsing']
 
 DIRS += ['build']
 
@@ -41,12 +41,5 @@ EXTRA_PP_COMPONENTS += [
 ]
 
 EXTRA_JS_MODULES += [
-    'distribution.js',
+   'distribution.js',
 ]
-
-BROWSER_CHROME_MANIFESTS += [
-    'test/browser.ini'
-]
-
-if CONFIG['MOZ_SAFE_BROWSING']:
-    BROWSER_CHROME_MANIFESTS += ['safebrowsing/content/test/browser.ini']

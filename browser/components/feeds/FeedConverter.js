@@ -1,4 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */ 
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */ 
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -187,7 +187,7 @@ FeedConverter.prototype = {
     // types.
     //
     // If this is just a feed, not some kind of specialized application, then
-    // auto-handlers can be set and we should obey them.
+    // auto-handlers can be set and we should obey them. 
     try {
       var feedService = 
           Cc["@mozilla.org/browser/feeds/result-service;1"].
@@ -235,11 +235,6 @@ FeedConverter.prototype = {
           getService(Ci.nsIIOService);
       var chromeChannel;
 
-      // handling a redirect, hence forwarding the loadInfo from the old channel
-      // to the newchannel.
-      var oldChannel = this._request.QueryInterface(Ci.nsIChannel);
-      var loadInfo = oldChannel.loadInfo;
-
       // If there was no automatic handler, or this was a podcast,
       // photostream or some other kind of application, show the preview page
       // if the parser returned a document.
@@ -251,12 +246,12 @@ FeedConverter.prototype = {
 
         // Now load the actual XUL document.
         var aboutFeedsURI = ios.newURI("about:feeds", null, null);
-        chromeChannel = ios.newChannelFromURIWithLoadInfo(aboutFeedsURI, loadInfo);
+        chromeChannel = ios.newChannelFromURI(aboutFeedsURI, null);
         chromeChannel.originalURI = result.uri;
         chromeChannel.owner =
           Services.scriptSecurityManager.getNoAppCodebasePrincipal(aboutFeedsURI);
       } else {
-        chromeChannel = ios.newChannelFromURIWithLoadInfo(result.uri, loadInfo);
+        chromeChannel = ios.newChannelFromURI(result.uri, null);
       }
 
       chromeChannel.loadGroup = this._request.loadGroup;
@@ -548,12 +543,10 @@ GenericProtocolHandler.prototype = {
     return uri;
   },
   
-  newChannel2: function GPH_newChannel(aUri, aLoadInfo) {
+  newChannel: function GPH_newChannel(aUri) {
     var inner = aUri.QueryInterface(Ci.nsINestedURI).innerURI;
     var channel = Cc["@mozilla.org/network/io-service;1"].
-                  getService(Ci.nsIIOService).
-                  newChannelFromURIWithLoadInfo(inner, aLoadInfo);
-
+                  getService(Ci.nsIIOService).newChannelFromURI(inner, null);
     if (channel instanceof Components.interfaces.nsIHttpChannel)
       // Set this so we know this is supposed to be a feed
       channel.setRequestHeader("X-Moz-Is-Feed", "1", false);
@@ -561,7 +554,6 @@ GenericProtocolHandler.prototype = {
     return channel;
   },
   
-
   QueryInterface: function GPH_QueryInterface(iid) {
     if (iid.equals(Ci.nsIProtocolHandler) ||
         iid.equals(Ci.nsISupports))

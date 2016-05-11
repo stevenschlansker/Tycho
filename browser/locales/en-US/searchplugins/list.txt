@@ -1,7 +1,7 @@
-amazondotcom
+duckduckgo-palemoon
 bing
-eBay
 google
+ecosia
 twitter
 wikipedia
 yahoo

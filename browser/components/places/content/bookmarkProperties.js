@@ -1,4 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -251,20 +251,24 @@ var BookmarkPropertiesPanel = {
 
         case "folder":
           this._itemType = BOOKMARK_FOLDER;
-          PlacesUtils.livemarks.getLivemark({ id: this._itemId })
-            .then(aLivemark => {
-              this._itemType = LIVEMARK_CONTAINER;
-              this._feedURI = aLivemark.feedURI;
-              this._siteURI = aLivemark.siteURI;
-              this._fillEditProperties();
+          PlacesUtils.livemarks.getLivemark(
+            { id: this._itemId },
+            (function (aStatus, aLivemark) {
+              if (Components.isSuccessCode(aStatus)) {
+                this._itemType = LIVEMARK_CONTAINER;
+                this._feedURI = aLivemark.feedURI;
+                this._siteURI = aLivemark.siteURI;
+                this._fillEditProperties();
 
-              let acceptButton = document.documentElement.getButton("accept");
-              acceptButton.disabled = !this._inputIsValid();
+                let acceptButton = document.documentElement.getButton("accept");
+                acceptButton.disabled = !this._inputIsValid();
 
-              let newHeight = window.outerHeight +
-                              this._element("descriptionField").boxObject.height;
-              window.resizeTo(window.outerWidth, newHeight);
-            }, () => undefined);
+                let newHeight = window.outerHeight +
+                                this._element("descriptionField").boxObject.height;
+                window.resizeTo(window.outerWidth, newHeight);
+              }
+            }).bind(this)
+          );
 
           break;
       }
@@ -467,6 +471,7 @@ var BookmarkPropertiesPanel = {
     // The order here is important! We have to uninit the panel first, otherwise
     // late changes could force it to commit more transactions.
     gEditItemOverlay.uninitPanel(true);
+    gEditItemOverlay = null;
     this._endBatch();
     window.arguments[0].performed = true;
   },
@@ -476,6 +481,7 @@ var BookmarkPropertiesPanel = {
     // changes done as part of Undo may change the panel contents and by
     // that force it to commit more transactions.
     gEditItemOverlay.uninitPanel(true);
+    gEditItemOverlay = null;
     this._endBatch();
     PlacesUtils.transactionManager.undoTransaction();
     window.arguments[0].performed = false;
@@ -551,7 +557,10 @@ var BookmarkPropertiesPanel = {
 
     if (this._loadInSidebar) {
       let annoObj = { name   : PlacesUIUtils.LOAD_IN_SIDEBAR_ANNO,
-                      value  : true };
+                      type   : Ci.nsIAnnotationService.TYPE_INT32,
+                      flags  : 0,
+                      value  : this._loadInSidebar,
+                      expires: Ci.nsIAnnotationService.EXPIRE_NEVER };
       let setLoadTxn = new PlacesSetItemAnnotationTransaction(-1, annoObj);
       childTransactions.push(setLoadTxn);
     }

@@ -1,4 +1,4 @@
-# -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+# -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -221,20 +221,8 @@ FeedWriter.prototype = {
    */
   __contentSandbox: null,
   get _contentSandbox() {
-    // This whole sandbox setup is totally archaic. It was introduced in bug
-    // 360529, presumably before the existence of a solid security membrane,
-    // since all of the manipulation of content here should be made safe by
-    // Xrays. And now that anonymous content is no longer content-accessible,
-    // manipulating the xml stylesheet content can't be done from content
-    // anymore.
-    //
-    // The right solution would be to rip out all of this sandbox junk and
-    // manipulate the DOM directly. But that's a big yak to shave, so for now,
-    // we just give the sandbox an nsExpandedPrincipal with []. This has the
-    // effect of giving it Xrays, and making it same-origin with the XBL scope,
-    // thereby letting it manipulate anonymous content.
     if (!this.__contentSandbox)
-      this.__contentSandbox = new Cu.Sandbox([this._window],
+      this.__contentSandbox = new Cu.Sandbox(this._window, 
                                              {sandboxName: 'FeedWriter'});
 
     return this.__contentSandbox;
@@ -314,7 +302,7 @@ FeedWriter.prototype = {
   },
 
    /**
-   * Returns a date suitable for displaying in the feed preview.
+   * Returns a date suitable for displaying in the feed preview. 
    * If the date cannot be parsed, the return value is "false".
    * @param   dateString
    *          A date as extracted from a feed entry. (entry.updated)
@@ -858,6 +846,7 @@ FeedWriter.prototype = {
            * when clicking "Subscribe Now".
            */
           var popupbox = this._handlersMenuList.firstChild.boxObject;
+          popupbox.QueryInterface(Components.interfaces.nsIPopupBoxObject);
           if (popupbox.popupState == "hiding") {
             this._chooseClientApp(function(aResult) {
               if (!aResult) {
@@ -888,13 +877,7 @@ FeedWriter.prototype = {
     switch (handler) {
       case "web": {
         if (this._handlersMenuList) {
-          var url;
-          try {
-            url = prefs.getComplexValue(getPrefWebForType(feedType), Ci.nsISupportsString).data;
-          } catch (ex) {
-            LOG("FeedWriter._setSelectedHandler: invalid or no handler in prefs");
-            return;
-          }
+          var url = prefs.getComplexValue(getPrefWebForType(feedType), Ci.nsISupportsString).data;
           var handlers =
             this._handlersMenuList.getElementsByAttribute("webhandlerurl", url);
           if (handlers.length == 0) {
@@ -1044,10 +1027,6 @@ FeedWriter.prototype = {
     var handlers = wccr.getContentHandlers(this._getMimeTypeForFeedType(feedType));
     if (handlers.length != 0) {
       for (var i = 0; i < handlers.length; ++i) {
-        if (!handlers[i].uri) {
-          LOG("Handler with name " + handlers[i].name + " has no URI!? Skipping...");
-          continue;
-        }
         menuItem = liveBookmarksMenuItem.cloneNode(false);
         menuItem.removeAttribute("selected");
         menuItem.className = "menuitem-iconic";
@@ -1128,19 +1107,9 @@ FeedWriter.prototype = {
                getInterface(Ci.nsIWebNavigation).
                QueryInterface(Ci.nsIDocShell).currentDocumentChannel;
 
-    var nullPrincipal = Cc["@mozilla.org/nullprincipal;1"].
-                        createInstance(Ci.nsIPrincipal);
-
     var resolvedURI = Cc["@mozilla.org/network/io-service;1"].
                       getService(Ci.nsIIOService).
-                      newChannel2("about:feeds",
-                                  null,
-                                  null,
-                                  null, // aLoadingNode
-                                  nullPrincipal,
-                                  null, // aTriggeringPrincipal
-                                  Ci.nsILoadInfo.SEC_NORMAL,
-                                  Ci.nsIContentPolicy.TYPE_OTHER).URI;
+                      newChannel("about:feeds", null, null).URI;
 
     if (resolvedURI.equals(chan.URI))
       return chan.originalURI;
@@ -1154,7 +1123,7 @@ FeedWriter.prototype = {
   _feedPrincipal: null,
   _handlersMenuList: null,
 
-  // BrowserFeedWriter WebIDL methods
+  // nsIFeedWriter
   init: function FW_init(aWindow) {
     var window = aWindow;
     this._feedURI = this._getOriginalURI(window);
@@ -1407,9 +1376,13 @@ FeedWriter.prototype = {
   },
 
   classID: FEEDWRITER_CID,
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIDOMEventListener, Ci.nsIObserver,
-                                         Ci.nsINavHistoryObserver,
-                                         Ci.nsIDOMGlobalPropertyInitializer])
+  classInfo: XPCOMUtils.generateCI({classID: FEEDWRITER_CID,
+                                    contractID: FEEDWRITER_CONTRACTID,
+                                    interfaces: [Ci.nsIFeedWriter],
+                                    flags: Ci.nsIClassInfo.DOM_OBJECT}),
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIFeedWriter,
+                                         Ci.nsIDOMEventListener, Ci.nsIObserver,
+                                         Ci.nsINavHistoryObserver])
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([FeedWriter]);

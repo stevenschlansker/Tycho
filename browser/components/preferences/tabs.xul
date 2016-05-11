@@ -10,6 +10,8 @@
 %brandDTD;
 <!ENTITY % tabsDTD SYSTEM "chrome://browser/locale/preferences/tabs.dtd">
 %tabsDTD;
+<!ENTITY % palemoonDTD SYSTEM "chrome://browser/locale/palemoon.dtd">
+%palemoonDTD;
 ]>
 
 <overlay id="TabsPaneOverlay"
@@ -23,13 +25,22 @@
 
     <preferences id="tabsPreferences">
       <preference id="browser.link.open_newwindow"     name="browser.link.open_newwindow"     type="int"/>
+      <preference id="browser.tabs.autoHide"           name="browser.tabs.autoHide"           type="bool" inverted="true"/>
       <preference id="browser.tabs.loadInBackground"   name="browser.tabs.loadInBackground"   type="bool" inverted="true"/>
-      <preference id="browser.tabs.warnOnClose"        name="browser.tabs.warnOnClose"        type="bool"/>
+      <preference id="browser.tabs.warnOnClose"        name="browser.tabs.warnOnClose"        type="bool"
+                  onchange="gTabsPane.syncWarnOnClose();"/>
+      <preference id="browser.tabs.warnOnCloseOtherTabs" name="browser.tabs.warnOnCloseOtherTabs" type="bool"/>
       <preference id="browser.tabs.warnOnOpen"         name="browser.tabs.warnOnOpen"         type="bool"/>
       <preference id="browser.sessionstore.restore_on_demand" name="browser.sessionstore.restore_on_demand" type="bool"/>
 #ifdef XP_WIN
       <preference id="browser.taskbar.previews.enable" name="browser.taskbar.previews.enable" type="bool"/>
 #endif
+      <preference id="browser.tabs.insertRelatedAfterCurrent"  name="browser.tabs.insertRelatedAfterCurrent"  type="bool"/>
+      <preference id="browser.search.context.loadInBackground" name="browser.search.context.loadInBackground" type="bool" inverted="true"/>
+      <preference id="browser.tabs.closeWindowWithLastTab"     name="browser.tabs.closeWindowWithLastTab"     type="bool"/>
+      <preference id="browser.newtab.url"
+                  name="browser.newtab.url"
+                  type="string" />  
     </preferences>
     
     <script type="application/javascript" src="chrome://browser/content/preferences/tabs.js"/>
@@ -48,6 +59,9 @@
       <checkbox id="warnOpenMany" label="&warnOpenManyTabs.label;"
                 accesskey="&warnOpenManyTabs.accesskey;"
                 preference="browser.tabs.warnOnOpen"/>
+      <checkbox id="showTabBar" label="&palemoon.showTabBar.label;"
+                accesskey="&palemoon.showTabBar.accesskey;"
+                preference="browser.tabs.autoHide"/>
       <checkbox id="restoreOnDemand" label="&restoreTabsOnDemand.label;"
                 accesskey="&restoreTabsOnDemand.accesskey;"
                 preference="browser.sessionstore.restore_on_demand"/>
@@ -59,6 +73,23 @@
                 accesskey="&showTabsInTaskbar.accesskey;"
                 preference="browser.taskbar.previews.enable"/>
 #endif
+<!-- Pale Moon additions -->
+      <checkbox id="insertRelatedAfterCurrent" label="&palemoon.insertRelatedAfterCurrent.label;"
+                preference="browser.tabs.insertRelatedAfterCurrent"/>
+      <checkbox id="contextLoadInBackground" label="&palemoon.contextLoadInBackground.label;"
+                preference="browser.search.context.loadInBackground"/>
+      <checkbox id="closeWindowWithLastTab" label="&palemoon.closeWindowWithLastTab.label;"
+                preference="browser.tabs.closeWindowWithLastTab"/>
+      <hbox align="center">
+        <label value="&palemoon.newtabPage.label;"/>
+        <menulist id="newtabPage" preference="browser.newtab.url">
+          <menupopup>
+            <menuitem label="&palemoon.newtabPage.blank.label;"     value="about:logopage" id="newtabPageBlank"/>
+            <menuitem label="&palemoon.newtabPage.home.label;"      value="http://start.palemoon.org/" id="newtabPageHome"/>
+            <menuitem label="&palemoon.newtabPage.quickdial.label;" value="about:newtab" id="newtabPageQuickdial"/>
+          </menupopup>
+        </menulist>
+      </hbox>
     </vbox>
 
   </prefpane>

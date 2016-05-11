@@ -152,8 +152,7 @@ nsGNOMEShellService::KeyMatchesAppName(const char *aKeyValue) const
 
   gchar *commandPath;
   if (mUseLocaleFilenames) {
-    gchar *nativePath = g_filename_from_utf8(aKeyValue, -1,
-                                             nullptr, nullptr, nullptr);
+    gchar *nativePath = g_filename_from_utf8(aKeyValue, -1, nullptr, nullptr, nullptr);
     if (!nativePath) {
       NS_ERROR("Error converting path to filesystem encoding");
       return false;
@@ -313,11 +312,6 @@ nsGNOMEShellService::SetDefaultBrowser(bool aClaimAllTypes,
     }
   }
 
-  nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (prefs) {
-    (void) prefs->SetBoolPref(PREF_CHECKDEFAULTBROWSER, true);
-  }
-
   return NS_OK;
 }
 
@@ -331,25 +325,29 @@ nsGNOMEShellService::GetShouldCheckDefaultBrowser(bool* aResult)
     return NS_OK;
   }
 
-  nsresult rv;
-  nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID, &rv));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsCOMPtr<nsIPrefBranch> prefs;
+  nsCOMPtr<nsIPrefService> pserve(do_GetService(NS_PREFSERVICE_CONTRACTID));
+  if (pserve)
+    pserve->GetBranch("", getter_AddRefs(prefs));
 
-  return prefs->GetBoolPref(PREF_CHECKDEFAULTBROWSER, aResult);
+  if (prefs)
+    prefs->GetBoolPref(PREF_CHECKDEFAULTBROWSER, aResult);
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
 nsGNOMEShellService::SetShouldCheckDefaultBrowser(bool aShouldCheck)
 {
-  nsresult rv;
-  nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID, &rv));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsCOMPtr<nsIPrefBranch> prefs;
+  nsCOMPtr<nsIPrefService> pserve(do_GetService(NS_PREFSERVICE_CONTRACTID));
+  if (pserve)
+    pserve->GetBranch("", getter_AddRefs(prefs));
 
-  return prefs->SetBoolPref(PREF_CHECKDEFAULTBROWSER, aShouldCheck);
+  if (prefs)
+    prefs->SetBoolPref(PREF_CHECKDEFAULTBROWSER, aShouldCheck);
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -409,15 +407,15 @@ nsGNOMEShellService::SetDesktopBackground(nsIDOMElement* aElement,
   // Set desktop wallpaper filling style
   nsAutoCString options;
   if (aPosition == BACKGROUND_TILE)
-    options.AssignLiteral("wallpaper");
+    options.Assign("wallpaper");
   else if (aPosition == BACKGROUND_STRETCH)
-    options.AssignLiteral("stretched");
+    options.Assign("stretched");
   else if (aPosition == BACKGROUND_FILL)
-    options.AssignLiteral("zoom");
+    options.Assign("zoom");
   else if (aPosition == BACKGROUND_FIT)
-    options.AssignLiteral("scaled");
+    options.Assign("scaled");
   else
-    options.AssignLiteral("centered");
+    options.Assign("centered");
 
   // Write the background file to the home directory.
   nsAutoCString filePath(PR_GetEnv("HOME"));
@@ -440,7 +438,7 @@ nsGNOMEShellService::SetDesktopBackground(nsIDOMElement* aElement,
   // build the file name
   filePath.Append('/');
   filePath.Append(NS_ConvertUTF16toUTF8(brandName));
-  filePath.AppendLiteral("_wallpaper.png");
+  filePath.Append("_wallpaper.png");
 
   // write the image to a file in the home dir
   rv = WriteImage(filePath, container);
@@ -582,9 +580,9 @@ nsGNOMEShellService::OpenApplication(int32_t aApplication)
 {
   nsAutoCString scheme;
   if (aApplication == APPLICATION_MAIL)
-    scheme.AssignLiteral("mailto");
+    scheme.Assign("mailto");
   else if (aApplication == APPLICATION_NEWS)
-    scheme.AssignLiteral("news");
+    scheme.Assign("news");
   else
     return NS_ERROR_NOT_AVAILABLE;
 

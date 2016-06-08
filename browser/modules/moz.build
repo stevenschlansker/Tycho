@@ -6,11 +6,15 @@
 
 EXTRA_JS_MODULES += [
     'BrowserNewTabPreloader.jsm',
+    'FormSubmitObserver.jsm',
+    'FormValidationHandler.jsm',
     'NetworkPrioritizer.jsm',
     'offlineAppCache.jsm',
     'openLocationLastURL.jsm',
     'PageMenu.jsm',
+    'PopupNotifications.jsm',
     'SharedFrame.jsm',
+    'WebappManager.jsm',
     'webappsUI.jsm',
     'webrtcUI.jsm'
 ]

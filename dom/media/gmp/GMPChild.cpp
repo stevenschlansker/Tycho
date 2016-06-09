@@ -386,8 +386,8 @@ GMPChild::GetLibPath(nsACString& aOutLibPath)
   aOutLibPath.Assign(pluginFilePath);
   return true;
 #else
-  nsCOMPtr<nsIFile> libFile;
-  if (!GetPluginFile(mPluginPath, libFile)) {
+  nsCOMPtr<nsIFile> pluginDirectoryPath, libFile;
+  if (!GetPluginFile(mPluginPath, pluginDirectoryPath, libFile)) {
     return false;
   }
   return NS_SUCCEEDED(libFile->GetNativePath(aOutLibPath));

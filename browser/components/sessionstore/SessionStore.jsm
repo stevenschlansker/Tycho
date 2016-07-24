@@ -77,7 +77,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
 Cu.import("resource://gre/modules/debug.js", this);
 Cu.import("resource://gre/modules/osfile.jsm", this);
 Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm", this);
-Cu.import("resource://gre/modules/commonjs/sdk/core/promise.js", this);
+Cu.import("resource:///modules/promise.js", this);
 
 XPCOMUtils.defineLazyServiceGetter(this, "gSessionStartup",
   "@mozilla.org/browser/sessionstartup;1", "nsISessionStartup");
@@ -3859,23 +3859,6 @@ let SessionStoreInternal = {
   },
 
   /**
-   * Gets the tab for the given browser. This should be marginally better
-   * than using tabbrowser's getTabForContentWindow. This assumes the browser
-   * is the linkedBrowser of a tab, not a dangling browser.
-   *
-   * @param aBrowser
-   *        The browser from which to get the tab.
-   */
-  _getTabForBrowser: function ssi_getTabForBrowser(aBrowser) {
-    let window = aBrowser.ownerDocument.defaultView;
-    for (let i = 0; i < window.gBrowser.tabs.length; i++) {
-      let tab = window.gBrowser.tabs[i];
-      if (tab.linkedBrowser == aBrowser)
-        return tab;
-    }
-  },
-
-  /**
    * Whether or not to resume session, if not recovering from a crash.
    * @returns bool
    */
@@ -4640,7 +4623,8 @@ let gRestoreTabsProgressListener = {
         aStateFlags & Ci.nsIWebProgressListener.STATE_IS_NETWORK &&
         aStateFlags & Ci.nsIWebProgressListener.STATE_IS_WINDOW) {
       // We need to reset the tab before starting the next restore.
-      let tab = SessionStoreInternal._getTabForBrowser(aBrowser);
+      let win = aBrowser.ownerDocument.defaultView;
+      let tab = win.gBrowser.getTabForBrowser(aBrowser);
       SessionStoreInternal._resetTabRestoringState(tab);
       SessionStoreInternal.restoreNextTab();
     }

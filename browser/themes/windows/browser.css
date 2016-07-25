@@ -2123,6 +2123,10 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
   padding: 0px;
 }
 
+.tab-close-button:not([selected]):not(:hover):not(:active) {
+  -moz-image-region: rect(0, 64px, 16px, 48px);
+}
+
 .tab-close-button:-moz-lwtheme-brighttext {
   list-style-image: url("chrome://global/skin/icons/close-inverted.png");
 }
@@ -2206,8 +2210,8 @@ toolbar[brighttext] .tabbrowser-arrowscrollbox > .scrollbutton-down {
 %endif
 
 .tabs-newtab-button:-moz-lwtheme-brighttext,
-toolbar[brighttext] #TabsToolbar > #new-tab-button,
-toolbar[brighttext] #TabsToolbar > toolbarpaletteitem > #new-tab-button {
+#TabsToolbar[brighttext] > #new-tab-button,
+#TabsToolbar[brighttext] > toolbarpaletteitem > #new-tab-button {
   list-style-image: url(chrome://browser/skin/tabbrowser/newtab-inverted.png);
 }
 

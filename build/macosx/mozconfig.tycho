@@ -1,4 +1,5 @@
-mk_add_options MOZ_MAKE_FLAGS=-j8
+mk_add_options MOZ_MAKE_FLAGS=-j4
+# or -j8?
 # Pale Moon branding
 
 ac_add_options --with-distribution-id=MCP

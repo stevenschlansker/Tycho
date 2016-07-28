@@ -3,9 +3,9 @@ mk_add_options MOZ_MAKE_FLAGS=-j8
 
 ac_add_options --with-distribution-id=MCP
 #
-ac_add_options --enable-update-packaging
+#ac_add_options --enable-update-packaging
 ac_add_options --enable-official-branding
-ac_add_options --enable-release
+#ac_add_options --enable-release
 export MOZILLA_OFFICIAL=1
 #
 mk_add_options MOZ_CO_PROJECT=browser
@@ -25,7 +25,7 @@ ac_add_options --disable-accessibility
 ac_add_options --disable-parental-controls
 ac_add_options --disable-webrtc
 ac_add_options --disable-safe-browsing
-ac_add_options --disable-url-classifier
+#ac_add_options --disable-url-classifier
 ac_add_options --disable-sandbox
 #
-ac_add_options --enable-strip
+#ac_add_options --enable-strip
